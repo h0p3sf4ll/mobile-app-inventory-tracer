@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mobile-app-inventory-tracer"
+version = "1.0.0"
+description = "Branch-aware Azure DevOps mobile application inventory scanner with optional public store enrichment"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {file = "LICENSE"}
+authors = [{name = "Mobile App Inventory Tracer contributors"}]
+keywords = [
+    "azure-devops",
+    "mobile",
+    "inventory",
+    "android",
+    "ios",
+    "app-store",
+    "google-play",
+]
+dependencies = ["openpyxl>=3.1.0", "requests>=2.31.0"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Version Control :: Git",
+    "Topic :: Utilities",
+]
+
+[project.urls]
+Homepage = "https://github.com/h0p3sf4ll/mobile-app-inventory-tracer"
+Repository = "https://github.com/h0p3sf4ll/mobile-app-inventory-tracer"
+Issues = "https://github.com/h0p3sf4ll/mobile-app-inventory-tracer/issues"
+
+[project.scripts]
+mobile-app-inventory-tracer = "mobile_scanner.cli:main"
+ado-mobile-scanner = "mobile_scanner.cli:main"
+
+[tool.setuptools]
+packages = ["mobile_scanner"]
+py-modules = ["ado_mobile_scanner", "mobile_app_inventory_tracer"]
