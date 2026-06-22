@@ -222,7 +222,7 @@ function renderActiveScan() {
     activeTitle.textContent = "No scan selected";
     detectedCount.textContent = "0";
     runtimeValue.textContent = "0s";
-    commandLine.textContent = "appsec-scan-router";
+    commandLine.textContent = "appsec-inventory-service";
     copyCommandButton.disabled = true;
     stopScanButton.disabled = true;
     downloadLogsButton.disabled = true;
@@ -233,7 +233,7 @@ function renderActiveScan() {
   activeTitle.textContent = `${scan.org || "Unknown"} · ${scan.target || "all"} · ${providerLabel(scan.provider)}`;
   detectedCount.textContent = String(scan.detectedCount || 0);
   runtimeValue.textContent = scanRuntime(scan);
-  commandLine.textContent = scan.command || "appsec-scan-router";
+  commandLine.textContent = scan.command || "appsec-inventory-service";
   copyCommandButton.disabled = !scan.command;
   stopScanButton.disabled = scan.status !== "running";
   downloadLogsButton.disabled = state.logs.length === 0;
@@ -301,7 +301,7 @@ function formPayload() {
     repo: provider === "github-enterprise" ? value(data, "repo") : "",
     baseUrl: provider === "github-enterprise" ? value(data, "baseUrl") : "",
     token: value(data, "token"),
-    outPrefix: value(data, "outPrefix") || "appsec_scan_router",
+    outPrefix: value(data, "outPrefix") || "appsec_inventory_service",
     minConfidence: value(data, "minConfidence") || "medium",
     activityMode: value(data, "activityMode") || "latest",
     branchAgeDays: numberValue(data, "branchAgeDays", 90),
@@ -331,7 +331,7 @@ function syncProviderFields() {
 }
 
 function loadForm() {
-  const saved = JSON.parse(localStorage.getItem("appsec-scan-router-ui") || "{}");
+  const saved = JSON.parse(localStorage.getItem("appsec-inventory-service-ui") || "{}");
   for (const name of persistedFields) {
     if (!(name in saved)) {
       continue;
@@ -362,12 +362,12 @@ function saveForm() {
       saved[name] = value(data, name);
     }
   }
-  localStorage.setItem("appsec-scan-router-ui", JSON.stringify(saved));
+  localStorage.setItem("appsec-inventory-service-ui", JSON.stringify(saved));
 }
 
 function resetForm() {
   form.reset();
-  localStorage.removeItem("appsec-scan-router-ui");
+  localStorage.removeItem("appsec-inventory-service-ui");
   syncProviderFields();
   notify("Form reset.");
 }

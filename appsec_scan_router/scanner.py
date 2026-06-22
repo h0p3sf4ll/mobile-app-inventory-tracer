@@ -16,10 +16,11 @@ from .constants import (
     DEFAULT_ACTIVITY_MODE,
     FALLBACK_BRANCH_PRIORITY,
     KNOWN_CATEGORIES,
+    KNOWN_INVENTORY_TYPES,
     active_sheet_name,
     older_sheet_name,
 )
-from .detection import detect_mobile_repo
+from .detection import detect_inventory_repo
 from .github import GitHubEnterpriseClient
 from .metadata import extract_mobile_metadata
 from .models import (
@@ -33,7 +34,7 @@ from .models import (
 )
 from .reports import StreamingReportWriter
 from .store_lookup import StoreLookupClient, store_columns
-from .utils import confidence_rank, should_fetch_content
+from .utils import clean_value, clean_version, confidence_rank, load_json_object, should_fetch_content, xml_text, yaml_scalar
 
 
 LOGGER = logging.getLogger("appsec_scan_router")
@@ -138,7 +139,7 @@ def scan(
                     LOGGER.info("Progress: %s/%s resolved branches scanned", completed_branches, submitted_branches)
 
         results.sort(key=row_sort_key)
-        LOGGER.info("Finished in %.1fs; found %s app branches", time.monotonic() - start, len(results))
+        LOGGER.info("Finished in %.1fs; found %s inventory branches", time.monotonic() - start, len(results))
         return results
     finally:
         client.close()
@@ -324,7 +325,7 @@ def scan_branch(
 
     content_paths = [path for path in paths if should_fetch_content(path)]
     contents = fetch_contents(client, target.project_name, repo_id, branch_name, content_paths, content_executor)
-    confidence, evidence, score = detect_mobile_repo(paths, contents)
+    confidence, evidence, score = detect_inventory_repo(paths, contents)
     metadata = extract_mobile_metadata(contents)
 
     if confidence == "none" or confidence_rank(confidence) < min_confidence_rank:
@@ -345,6 +346,8 @@ def scan_branch(
         target=target,
         branch_name=branch_name,
         metadata=metadata,
+        contents=contents,
+        paths=paths,
         activity=activity,
         confidence=confidence,
         score=score,
@@ -359,6 +362,8 @@ def build_scan_row(
     target: RepoScanTarget,
     branch_name: str,
     metadata: MobileAppMetadata,
+    contents: dict[str, str],
+    paths: list[str],
     activity: RepoActivityMetadata,
     confidence: str,
     score: int,
@@ -370,6 +375,13 @@ def build_scan_row(
     repo = target.repo
     age_bucket = branch_age_bucket(activity.last_updated, branch_age_days)
     store_metadata = store_columns(metadata.identifier, categories, store_client)
+    source_url = repo_source_url(repo)
+    inventory_name = inventory_name_from_metadata(metadata, contents, repo.get("name", ""))
+    inventory_version = inventory_version_from_metadata(metadata, contents)
+    inventory_types = inventory_types_from_categories(categories)
+    primary_language = primary_language_for_branch(contents, paths, categories)
+    scanner_target = scanner_target_ref(source_url, branch_name)
+    sonarqube_project_key = sonar_project_key(target.project_name, repo.get("name", ""), branch_name)
     return {
         "project": target.project_name,
         "repo_name": repo.get("name", ""),
@@ -377,6 +389,15 @@ def build_scan_row(
         "branch_last_updated": activity.last_updated,
         "branch_age_bucket": age_bucket,
         "web_url": repo.get("webUrl", ""),
+        "source_url": source_url,
+        "inventory_name": inventory_name,
+        "inventory_version": inventory_version,
+        "inventory_types": "; ".join(inventory_types),
+        "primary_language": primary_language,
+        "scanner_target": scanner_target,
+        "semgrep_target": scanner_target,
+        "sonarqube_project_key": sonarqube_project_key,
+        "sonarqube_project_name": inventory_name,
         "mobile_name": metadata.name,
         "mobile_version": metadata.version,
         "mobile_identifier": metadata.identifier,
@@ -387,6 +408,7 @@ def build_scan_row(
         "confidence": confidence,
         "score": score,
         "categories": "; ".join(categories),
+        **type_columns(inventory_types),
         **category_columns(categories),
         **store_metadata,
         "detection_evidence": json.dumps([item.as_dict() for item in evidence], sort_keys=True),
@@ -403,10 +425,11 @@ def row_sort_key(row: dict[str, Any]) -> tuple[str, str, str]:
 
 def log_detected_result(result: dict[str, Any]) -> None:
     LOGGER.info(
-        "DETECTED app=%s version=%s id=%s confidence=%s repo=%s/%s branch=%s age=%s categories=%s",
-        result["mobile_name"] or "(unknown)",
-        result["mobile_version"] or "(unknown)",
-        result["mobile_identifier"] or "(unknown)",
+        "DETECTED asset=%s version=%s id=%s types=%s confidence=%s repo=%s/%s branch=%s age=%s categories=%s",
+        result["inventory_name"] or "(unknown)",
+        result["inventory_version"] or "(unknown)",
+        result["mobile_identifier"] or "(not_applicable)",
+        result["inventory_types"] or "(unknown)",
         result["confidence"],
         result["project"],
         result["repo_name"],
@@ -637,6 +660,191 @@ def category_columns(categories: Iterable[str]) -> dict[str, str]:
         f"category_{category}": "TRUE" if category in category_set else "FALSE"
         for category in KNOWN_CATEGORIES
     }
+
+
+def type_columns(inventory_types: Iterable[str]) -> dict[str, str]:
+    type_set = set(inventory_types)
+    return {
+        f"type_{inventory_type}": "TRUE" if inventory_type in type_set else "FALSE"
+        for inventory_type in KNOWN_INVENTORY_TYPES
+    }
+
+
+def inventory_types_from_categories(categories: Iterable[str]) -> list[str]:
+    category_set = set(categories)
+    types: list[str] = []
+    if category_set & {
+        "android",
+        "ios",
+        "flutter",
+        "react_native",
+        "ionic_capacitor_cordova",
+        "xamarin_maui",
+        "pipeline_mobile",
+    }:
+        types.append("mobile_app")
+    if category_set & {"web_frontend", "web_backend"}:
+        types.append("web_app")
+    if "api_service" in category_set:
+        types.append("api_service")
+    if "microservice" in category_set or "containerized_service" in category_set:
+        types.append("microservice")
+    if "middleware" in category_set:
+        types.append("middleware")
+    if "serverless" in category_set:
+        types.append("serverless")
+    if "android_library" in category_set:
+        types.append("library")
+    if "infrastructure_as_code" in category_set:
+        types.append("infrastructure")
+    return [inventory_type for inventory_type in KNOWN_INVENTORY_TYPES if inventory_type in types]
+
+
+def repo_source_url(repo: dict[str, Any]) -> str:
+    return clean_value(repo.get("remoteUrl")) or clean_value(repo.get("sshUrl")) or clean_value(repo.get("webUrl"))
+
+
+def scanner_target_ref(source_url: str, branch_name: str) -> str:
+    if not source_url:
+        return ""
+    if not branch_name:
+        return source_url
+    return f"{source_url}#branch={branch_name}"
+
+
+def sonar_project_key(project_name: str, repo_name: str, branch_name: str) -> str:
+    raw = ":".join(part for part in (project_name, repo_name, branch_name) if part)
+    cleaned = re.sub(r"[^A-Za-z0-9_.:-]+", "-", raw).strip(".:-_")
+    if not cleaned:
+        return "appsec-inventory"
+    if cleaned.isdigit():
+        return f"appsec-{cleaned}"
+    return cleaned[:400]
+
+
+def inventory_name_from_metadata(metadata: MobileAppMetadata, contents: dict[str, str], repo_name: str) -> str:
+    return first_manifest_value(
+        metadata.name,
+        package_json_value(contents, "name"),
+        pyproject_value(contents, "name"),
+        pom_xml_value(contents, "artifactId"),
+        csproj_value(contents, "AssemblyName"),
+        pubspec_value(contents, "name"),
+        repo_name,
+    )
+
+
+def inventory_version_from_metadata(metadata: MobileAppMetadata, contents: dict[str, str]) -> str:
+    return first_manifest_value(
+        metadata.version,
+        clean_version(package_json_value(contents, "version")),
+        clean_version(pyproject_value(contents, "version")),
+        clean_version(pom_xml_value(contents, "version")),
+        clean_version(csproj_value(contents, "Version")),
+        clean_version(pubspec_value(contents, "version")),
+    )
+
+
+def primary_language_for_branch(
+    contents: dict[str, str],
+    paths: Iterable[str],
+    categories: Iterable[str],
+) -> str:
+    lower_paths = [path.lower() for path in paths]
+    category_set = set(categories)
+    if "flutter" in category_set or any(path.endswith("/pubspec.yaml") for path in lower_paths):
+        return "Dart"
+    if any(path.endswith(".csproj") for path in lower_paths):
+        return "C#"
+    if any(path.endswith("/pom.xml") or path.endswith("/build.gradle") or path.endswith("/build.gradle.kts") for path in lower_paths):
+        return "Java/Kotlin"
+    if any(path.endswith("/requirements.txt") or path.endswith("/pyproject.toml") or path.endswith("/pipfile") for path in lower_paths):
+        return "Python"
+    if any(path.endswith("/go.mod") for path in lower_paths):
+        return "Go"
+    if any(path.endswith("/cargo.toml") for path in lower_paths):
+        return "Rust"
+    if any(path.endswith("/composer.json") for path in lower_paths):
+        return "PHP"
+    if any(path.endswith("/gemfile") for path in lower_paths):
+        return "Ruby"
+    if any(path.endswith("/package.json") for path in lower_paths):
+        return package_json_language(contents)
+    return ""
+
+
+def package_json_language(contents: dict[str, str]) -> str:
+    if any(path.lower().endswith("/tsconfig.json") for path in contents):
+        return "TypeScript"
+    dependencies = merged_package_dependency_names(contents)
+    if dependencies & {"typescript", "ts-node", "@types/node"}:
+        return "TypeScript"
+    return "JavaScript"
+
+
+def merged_package_dependency_names(contents: dict[str, str]) -> set[str]:
+    for path, content in contents.items():
+        if path.lower().endswith("package.json"):
+            data = load_json_object(content)
+            names: set[str] = set()
+            for key in ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies"):
+                dependencies = data.get(key)
+                if isinstance(dependencies, dict):
+                    names.update(str(name) for name in dependencies)
+            return names
+    return set()
+
+
+def first_manifest_value(*values: str) -> str:
+    for value in values:
+        cleaned = clean_value(value)
+        if cleaned:
+            return cleaned
+    return ""
+
+
+def package_json_value(contents: dict[str, str], key: str) -> str:
+    for path, content in contents.items():
+        if path.lower().endswith("package.json"):
+            return clean_value(load_json_object(content).get(key))
+    return ""
+
+
+def pyproject_value(contents: dict[str, str], key: str) -> str:
+    pattern = re.compile(rf"(?m)^\s*{re.escape(key)}\s*=\s*['\"]([^'\"]+)['\"]")
+    for path, content in contents.items():
+        if path.lower().endswith("pyproject.toml"):
+            match = pattern.search(content)
+            if match:
+                return clean_value(match.group(1))
+    return ""
+
+
+def pom_xml_value(contents: dict[str, str], tag_name: str) -> str:
+    for path, content in contents.items():
+        if path.lower().endswith("pom.xml"):
+            value = xml_text(content, tag_name)
+            if value:
+                return value
+    return ""
+
+
+def csproj_value(contents: dict[str, str], tag_name: str) -> str:
+    for path, content in contents.items():
+        if path.lower().endswith(".csproj"):
+            value = xml_text(content, tag_name)
+            if value:
+                return value
+    return ""
+
+
+def pubspec_value(contents: dict[str, str], key: str) -> str:
+    for path, content in contents.items():
+        if path.lower().endswith("pubspec.yaml"):
+            value = yaml_scalar(content, key)
+            if value:
+                return value
+    return ""
 
 
 def fetch_repo_activity(

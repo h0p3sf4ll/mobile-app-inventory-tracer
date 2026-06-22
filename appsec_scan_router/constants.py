@@ -47,9 +47,30 @@ KNOWN_CATEGORIES = (
     "xamarin_maui",
     "pipeline_mobile",
     "android_library",
+    "web_frontend",
+    "web_backend",
+    "api_service",
+    "microservice",
+    "middleware",
+    "serverless",
+    "containerized_service",
+    "infrastructure_as_code",
 )
 
 CATEGORY_FIELDNAMES = tuple(f"category_{category}" for category in KNOWN_CATEGORIES)
+
+KNOWN_INVENTORY_TYPES = (
+    "mobile_app",
+    "web_app",
+    "api_service",
+    "microservice",
+    "middleware",
+    "serverless",
+    "library",
+    "infrastructure",
+)
+
+TYPE_FIELDNAMES = tuple(f"type_{inventory_type}" for inventory_type in KNOWN_INVENTORY_TYPES)
 
 STORE_FIELDNAMES = (
     "store_lookup_status",
@@ -73,11 +94,23 @@ STORE_FIELDNAMES = (
 
 CONTENT_FILES_TO_FETCH: tuple[str, ...] = (
     "package.json",
+    "package-lock.json",
+    "pnpm-lock.yaml",
+    "yarn.lock",
     "app.json",
     "expo.json",
     "app.config.js",
     "app.config.ts",
     "pubspec.yaml",
+    "pyproject.toml",
+    "requirements.txt",
+    "Pipfile",
+    "poetry.lock",
+    "pom.xml",
+    "go.mod",
+    "Cargo.toml",
+    "composer.json",
+    "Gemfile",
     "AndroidManifest.xml",
     "Info.plist",
     "InfoPlist.strings",
@@ -96,6 +129,20 @@ CONTENT_FILES_TO_FETCH: tuple[str, ...] = (
     "capacitor.config.json",
     "ionic.config.json",
     "config.xml",
+    "Dockerfile",
+    "docker-compose.yml",
+    "docker-compose.yaml",
+    "compose.yml",
+    "compose.yaml",
+    "Chart.yaml",
+    "values.yaml",
+    "kustomization.yaml",
+    "serverless.yml",
+    "serverless.yaml",
+    "application.yml",
+    "application.yaml",
+    "application.properties",
+    "main.tf",
 )
 
 CONTENT_FILE_SUFFIXES = tuple(name.lower() for name in CONTENT_FILES_TO_FETCH)
@@ -107,6 +154,15 @@ CSV_FIELDNAMES = (
     "branch_last_updated",
     "branch_age_bucket",
     "web_url",
+    "source_url",
+    "inventory_name",
+    "inventory_version",
+    "inventory_types",
+    "primary_language",
+    "scanner_target",
+    "semgrep_target",
+    "sonarqube_project_key",
+    "sonarqube_project_name",
     "mobile_name",
     "mobile_version",
     "mobile_identifier",
@@ -117,7 +173,40 @@ CSV_FIELDNAMES = (
     "confidence",
     "score",
     "categories",
+    *TYPE_FIELDNAMES,
     *CATEGORY_FIELDNAMES,
     *STORE_FIELDNAMES,
     "detection_evidence",
+)
+
+SCANNER_TARGET_FIELDNAMES = (
+    "project",
+    "repo_name",
+    "branch_name",
+    "branch_last_updated",
+    "source_url",
+    "web_url",
+    "inventory_name",
+    "inventory_version",
+    "inventory_types",
+    "primary_language",
+    "categories",
+    "confidence",
+    "score",
+    "semgrep_target",
+    "sonarqube_project_key",
+    "sonarqube_project_name",
+)
+
+SONARQUBE_FIELDNAMES = (
+    "sonar.projectKey",
+    "sonar.projectName",
+    "sonar.sources",
+    "branch",
+    "source_url",
+    "web_url",
+    "project",
+    "repo_name",
+    "inventory_types",
+    "categories",
 )

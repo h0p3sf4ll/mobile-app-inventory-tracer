@@ -11,6 +11,11 @@ import mobile_scanner
 from openpyxl import load_workbook
 
 
+def workbook_value(sheet, field_name, row):
+    headers = [cell.value for cell in sheet[1]]
+    return sheet.cell(row=row, column=headers.index(field_name) + 1).value
+
+
 class PublicApiTests(unittest.TestCase):
     def test_package_api_is_importable(self):
         self.assertIs(scanner.ScanConfig, ado_mobile_scanner.ScanConfig)
@@ -18,6 +23,8 @@ class PublicApiTests(unittest.TestCase):
         self.assertTrue(callable(scanner.scan))
         self.assertTrue(callable(scanner.scan_to_reports))
         self.assertTrue(callable(scanner.detect_mobile_repo))
+        self.assertTrue(callable(scanner.detect_inventory_repo))
+        self.assertTrue(callable(scanner.AppSecInventoryService))
         self.assertTrue(callable(scanner.AppSecScanRouter))
         self.assertTrue(callable(scanner.GitHubEnterpriseClient))
 
@@ -142,6 +149,19 @@ class UiServiceTests(unittest.TestCase):
         self.assertIn("--store-lookup", command)
         self.assertIn("inventory_scan", command)
 
+    def test_build_scan_command_scans_all_github_repos_when_repo_empty(self):
+        config = scanner.normalize_scan_config(
+            {
+                "provider": "github-enterprise",
+                "org": "FabrikamCloud",
+                "baseUrl": "https://github.fabrikam.example/api/v3",
+            }
+        )
+
+        command = scanner.build_scan_command(config, Path("/reports/scan-1"))
+
+        self.assertNotIn("--repo", command)
+
     def test_build_scan_command_for_azure_devops(self):
         config = scanner.normalize_scan_config(
             {
@@ -161,6 +181,18 @@ class UiServiceTests(unittest.TestCase):
         self.assertIn("Go_To_Market", command)
         self.assertNotIn("--base-url", command)
         self.assertIn("4", command)
+
+    def test_build_scan_command_scans_all_ado_projects_when_project_empty(self):
+        config = scanner.normalize_scan_config(
+            {
+                "provider": "azure-devops",
+                "org": "FabrikamCloud",
+            }
+        )
+
+        command = scanner.build_scan_command(config, Path("/reports/scan-2"))
+
+        self.assertNotIn("--project", command)
 
     def test_redact_command_hides_pat_values(self):
         command = ("appsec-scan-router", "--pat", "secret", "--org", "FabrikamCloud")
@@ -217,6 +249,69 @@ android {
         self.assertEqual(evidence, [])
         self.assertEqual(score, 0)
 
+    def test_detects_web_frontend_inventory_repo(self):
+        confidence, evidence, score = scanner.detect_inventory_repo(
+            ["/package.json", "/src/App.tsx"],
+            {
+                "/package.json": json.dumps(
+                    {
+                        "name": "customer-portal",
+                        "version": "2.4.1",
+                        "dependencies": {"react": "18.3.1", "vite": "5.0.0"},
+                        "scripts": {"start": "vite"},
+                    }
+                )
+            },
+        )
+
+        categories = {item.category for item in evidence}
+        self.assertEqual(confidence, "medium")
+        self.assertGreaterEqual(score, 4)
+        self.assertIn("web_frontend", categories)
+
+    def test_detects_spring_microservice_inventory_repo(self):
+        confidence, evidence, score = scanner.detect_inventory_repo(
+            ["/pom.xml", "/Dockerfile"],
+            {
+                "/pom.xml": """\
+<project>
+  <artifactId>orders-api</artifactId>
+  <dependencies>
+    <dependency><artifactId>spring-boot-starter-web</artifactId></dependency>
+    <dependency><artifactId>spring-kafka</artifactId></dependency>
+  </dependencies>
+</project>
+""",
+                "/Dockerfile": "FROM eclipse-temurin:21\nCMD [\"java\", \"-jar\", \"app.jar\"]\n",
+            },
+        )
+
+        categories = {item.category for item in evidence}
+        self.assertEqual(confidence, "high")
+        self.assertGreaterEqual(score, 8)
+        self.assertIn("microservice", categories)
+        self.assertIn("api_service", categories)
+        self.assertIn("middleware", categories)
+        self.assertIn("containerized_service", categories)
+
+    def test_detects_python_middleware_inventory_repo(self):
+        confidence, evidence, score = scanner.detect_inventory_repo(
+            ["/pyproject.toml"],
+            {
+                "/pyproject.toml": """\
+[project]
+name = "billing-worker"
+version = "0.8.0"
+dependencies = ["celery", "confluent-kafka"]
+"""
+            },
+        )
+
+        categories = {item.category for item in evidence}
+        self.assertEqual(confidence, "medium")
+        self.assertGreaterEqual(score, 3)
+        self.assertIn("middleware", categories)
+
     def test_generic_config_xml_is_not_mobile(self):
         confidence, evidence, score = scanner.detect_mobile_repo(
             ["/config.xml"],
@@ -271,6 +366,10 @@ android {
     def test_should_fetch_allowed_content_files(self):
         self.assertTrue(scanner.should_fetch_content("/src/MyApp.csproj"))
         self.assertTrue(scanner.should_fetch_content("/package.json"))
+        self.assertTrue(scanner.should_fetch_content("/pom.xml"))
+        self.assertTrue(scanner.should_fetch_content("/pyproject.toml"))
+        self.assertTrue(scanner.should_fetch_content("/Dockerfile"))
+        self.assertTrue(scanner.should_fetch_content("/serverless.yml"))
         self.assertTrue(scanner.should_fetch_content("/gradle.properties"))
         self.assertTrue(scanner.should_fetch_content("/Directory.Build.props"))
         self.assertTrue(scanner.should_fetch_content("/android/app/src/main/AndroidManifest.xml"))
@@ -558,6 +657,15 @@ class OutputTests(unittest.TestCase):
             "branch_last_updated": "2024-05-02T08:30:15Z",
             "branch_age_bucket": scanner.ACTIVE_SHEET_NAME,
             "web_url": "https://example.invalid/repo",
+            "source_url": "https://example.invalid/repo.git",
+            "inventory_name": "Agsnap",
+            "inventory_version": "1.0.2",
+            "inventory_types": "mobile_app",
+            "primary_language": "Java/Kotlin",
+            "scanner_target": "https://example.invalid/repo.git#branch=main",
+            "semgrep_target": "https://example.invalid/repo.git#branch=main",
+            "sonarqube_project_key": "Project:Repo:main",
+            "sonarqube_project_name": "Agsnap",
             "mobile_name": "Agsnap",
             "mobile_version": "1.0.2",
             "mobile_identifier": "com.fabrikam.agsnap",
@@ -568,6 +676,7 @@ class OutputTests(unittest.TestCase):
             "confidence": "medium",
             "score": 2,
             "categories": "android",
+            **scanner.type_columns(["mobile_app"]),
             **scanner.category_columns(["android"]),
             "detection_evidence": json.dumps(
                 [
@@ -590,12 +699,19 @@ class OutputTests(unittest.TestCase):
             self.assertTrue(csv_path.exists())
             self.assertTrue(json_path.exists())
             self.assertTrue(xlsx_path.exists())
+            self.assertTrue((Path(tmpdir) / "scan_scanner_targets.csv").exists())
+            self.assertTrue((Path(tmpdir) / "scan_scanner_targets.json").exists())
+            self.assertTrue((Path(tmpdir) / "scan_semgrep_targets.txt").exists())
+            self.assertTrue((Path(tmpdir) / "scan_sonarqube_projects.csv").exists())
             loaded = json.loads(json_path.read_text(encoding="utf-8"))
             self.assertEqual(loaded, [result])
             self.assertIn("repo_name", csv_path.read_text(encoding="utf-8"))
+            self.assertIn("https://example.invalid/repo.git#branch=main", (Path(tmpdir) / "scan_semgrep_targets.txt").read_text(encoding="utf-8"))
+            targets = json.loads((Path(tmpdir) / "scan_scanner_targets.json").read_text(encoding="utf-8"))
+            self.assertEqual(targets[0]["inventory_name"], "Agsnap")
             workbook = load_workbook(xlsx_path)
             self.assertEqual(workbook.sheetnames, [scanner.ACTIVE_SHEET_NAME, scanner.OLDER_SHEET_NAME])
-            self.assertEqual(workbook[scanner.ACTIVE_SHEET_NAME]["G2"].value, "Agsnap")
+            self.assertEqual(workbook_value(workbook[scanner.ACTIVE_SHEET_NAME], "mobile_name", 2), "Agsnap")
 
     def test_streaming_report_writer_flushes_rows_as_they_are_written(self):
         result = self.sample_result()
@@ -605,6 +721,10 @@ class OutputTests(unittest.TestCase):
                 self.assertTrue(writer.csv_path.exists())
                 self.assertTrue(writer.json_path.exists())
                 self.assertTrue(writer.xlsx_path.exists())
+                self.assertTrue(writer.scanner_targets_csv_path.exists())
+                self.assertTrue(writer.scanner_targets_json_path.exists())
+                self.assertTrue(writer.semgrep_targets_path.exists())
+                self.assertTrue(writer.sonarqube_projects_path.exists())
 
                 writer.write_result(result)
 
@@ -616,7 +736,7 @@ class OutputTests(unittest.TestCase):
             loaded = json.loads(writer.json_path.read_text(encoding="utf-8"))
             self.assertEqual(loaded, [result])
             workbook = load_workbook(writer.xlsx_path)
-            self.assertEqual(workbook[scanner.ACTIVE_SHEET_NAME]["G2"].value, "Agsnap")
+            self.assertEqual(workbook_value(workbook[scanner.ACTIVE_SHEET_NAME], "mobile_name", 2), "Agsnap")
 
     def test_category_columns_are_excel_filter_friendly(self):
         columns = scanner.category_columns(["android", "react_native"])
@@ -624,6 +744,19 @@ class OutputTests(unittest.TestCase):
         self.assertEqual(columns["category_android"], "TRUE")
         self.assertEqual(columns["category_react_native"], "TRUE")
         self.assertEqual(columns["category_ios"], "FALSE")
+
+    def test_type_columns_are_excel_filter_friendly(self):
+        columns = scanner.type_columns(["web_app", "microservice"])
+
+        self.assertEqual(columns["type_web_app"], "TRUE")
+        self.assertEqual(columns["type_microservice"], "TRUE")
+        self.assertEqual(columns["type_mobile_app"], "FALSE")
+
+    def test_inventory_types_from_categories(self):
+        self.assertEqual(
+            scanner.inventory_types_from_categories(["web_backend", "api_service", "middleware"]),
+            ["web_app", "api_service", "middleware"],
+        )
 
     def test_identifier_status(self):
         self.assertEqual(scanner.identifier_status("com.fabrikam.agsnap"), "found")

@@ -22,8 +22,8 @@ from .scanner import scan_to_reports
 
 def parse_args(argv: list[str]) -> ScanConfig:
     parser = argparse.ArgumentParser(
-        prog="appsec-scan-router",
-        description="Identify mobile apps across Azure DevOps or GitHub Enterprise repositories.",
+        prog="appsec-inventory-service",
+        description="Inventory applications, services, middleware, and mobile apps across Azure DevOps or GitHub Enterprise.",
     )
     parser.add_argument(
         "--provider",
@@ -32,8 +32,8 @@ def parse_args(argv: list[str]) -> ScanConfig:
         help="Source provider. Defaults to azure-devops.",
     )
     parser.add_argument("--org", required=True, help="Azure DevOps organization or GitHub owner.")
-    parser.add_argument("--project", help="Azure DevOps project or GitHub repository name.")
-    parser.add_argument("--repo", help="GitHub repository name. Alias for --project.")
+    parser.add_argument("--project", help="Azure DevOps project or GitHub repository name. Omit to scan all.")
+    parser.add_argument("--repo", help="GitHub repository name. Alias for --project. Omit to scan all.")
     parser.add_argument(
         "--base-url",
         default=os.getenv("APPSEC_SCAN_BASE_URL") or os.getenv("GITHUB_API_URL") or os.getenv("GHE_API_URL") or "",
@@ -47,12 +47,12 @@ def parse_args(argv: list[str]) -> ScanConfig:
         "--out-dir",
         type=Path,
         default=Path.cwd(),
-        help="Directory for CSV, JSON, and Excel reports. Defaults to the current directory.",
+        help="Directory for CSV, JSON, Excel, and scanner target reports. Defaults to the current directory.",
     )
     parser.add_argument(
         "--out-prefix",
-        default="appsec_scan_router",
-        help="Output file prefix. Defaults to appsec_scan_router.",
+        default="appsec_inventory_service",
+        help="Output file prefix. Defaults to appsec_inventory_service.",
     )
     parser.add_argument(
         "--max-workers",
@@ -212,8 +212,12 @@ def configure_logging(verbose: bool) -> None:
 def main(argv: list[str] | None = None) -> int:
     config = parse_args(sys.argv[1:] if argv is None else argv)
     results, csv_path, json_path, xlsx_path = scan_to_reports(config)
-    print(f"Done. Found {len(results)} mobile-specific app branches.")
+    print(f"Done. Found {len(results)} inventory branches.")
     print(f"CSV:  {csv_path}")
     print(f"JSON: {json_path}")
     print(f"XLSX: {xlsx_path}")
+    print(f"Scanner targets CSV:  {config.out_dir / f'{config.out_prefix}_scanner_targets.csv'}")
+    print(f"Scanner targets JSON: {config.out_dir / f'{config.out_prefix}_scanner_targets.json'}")
+    print(f"Semgrep targets:      {config.out_dir / f'{config.out_prefix}_semgrep_targets.txt'}")
+    print(f"SonarQube projects:   {config.out_dir / f'{config.out_prefix}_sonarqube_projects.csv'}")
     return 0

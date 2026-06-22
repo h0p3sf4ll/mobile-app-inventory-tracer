@@ -61,7 +61,7 @@ class StoreLookupClient:
             session.headers.update(
                 {
                     "Accept": "application/json,text/html,application/xhtml+xml",
-                    "User-Agent": "appsec-scan-router/1.0",
+                    "User-Agent": "appsec-inventory-service/1.3",
                 }
             )
             adapter = HTTPAdapter(max_retries=self._retry, pool_connections=8, pool_maxsize=8)

@@ -37,7 +37,7 @@ class GitHubEnterpriseClient:
             "Authorization": f"Bearer {token}",
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
-            "User-Agent": "appsec-scan-router/1.0",
+            "User-Agent": "appsec-inventory-service/1.3",
         }
         self._retry = Retry(
             total=5,
@@ -144,6 +144,7 @@ class GitHubEnterpriseClient:
             "fullName": full_name,
             "defaultBranch": f"refs/heads/{default_branch}" if default_branch else "",
             "webUrl": clean_value(repo.get("html_url")),
+            "remoteUrl": clean_value(repo.get("clone_url")) or clean_value(repo.get("ssh_url")),
             "isDisabled": bool(repo.get("disabled") or repo.get("archived")),
         }
 

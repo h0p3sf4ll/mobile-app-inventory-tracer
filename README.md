@@ -1,27 +1,26 @@
-# AppSec Scan Router
+# AppSec Inventory Service
 
-AppSec Scan Router is a Python SDK, CLI, browser UI, and Docker image for mobile application inventory across
-Azure DevOps and GitHub Enterprise. It finds mobile app branches, extracts app metadata, captures ownership and
-activity signals, validates public store listings when requested, and writes Excel-ready reports while the scan is
-running.
+AppSec Inventory Service builds an application inventory from Azure DevOps and GitHub Enterprise without cloning
+repositories. It discovers mobile apps, web applications, API services, microservices, serverless workloads,
+containerized services, and middleware-oriented workers from structured source evidence, then streams reports and
+scanner target manifests as the scan runs.
 
-The scanner is built for engineering, security, platform, and architecture leaders who need a current view of
-mobile code without cloning every repository or relying on loose keyword search.
+The project is published on PyPI as `appsec-scan-router` for package continuity. The primary commands are now
+`appsec-inventory-service` and `appsec-inventory-service-ui`; older command names remain available as compatibility
+aliases.
 
-## What It Does
+## Capabilities
 
-- Scans each repository's default branch
-- Uses one fallback branch only when no default branch exists
-- Uses Azure DevOps build definitions or GitHub deployment refs as the first fallback signal
-- Falls back to deployment-like branch names such as `prod`, `preprod`, `main`, `master`, `development`,
-  `develop`, and `dev`
+- Scans Azure DevOps or GitHub Enterprise organizations
+- Scans the entire organization when Azure DevOps `--project` or GitHub `--repo` is omitted
+- Scans one resolved branch per repository: default branch first, then deployment or production-like fallback branches
 - Detects Android, iOS, Flutter, React Native, Expo, Ionic, Capacitor, Cordova, Xamarin, and .NET MAUI
-- Parses structured manifests and project files for stronger accuracy
-- Extracts app name, version, bundle/package identifier, contributors, and last branch activity
-- Splits Excel output into `Active 90d` and `Older 90d` worksheets by default
-- Streams CSV and JSON rows as apps are detected
-- Optionally enriches detected identifiers with public Apple App Store and Google Play data
-- Runs as a CLI, SDK, browser UI, importable library, or container
+- Detects web frontends, web backends, API services, microservices, middleware workers, serverless apps, containers, and deployment descriptors
+- Extracts inventory name, version, language, categories, mobile bundle/package identifiers, contributors, and last activity
+- Splits Excel output into active and older worksheets based on the configured branch age window
+- Optionally validates public Apple App Store and Google Play listings from detected mobile identifiers
+- Emits CSV, JSON, XLSX, Semgrep target lists, SonarQube project manifests, and generic scanner target manifests
+- Runs as a CLI, browser UI, Docker image, SDK, or importable library
 
 ## Install
 
@@ -29,11 +28,9 @@ mobile code without cloning every repository or relying on loose keyword search.
 python -m pip install appsec-scan-router
 ```
 
-The package installs both runtime commands:
-
 ```bash
-appsec-scan-router --help
-appsec-scan-router-ui --help
+appsec-inventory-service --help
+appsec-inventory-service-ui --help
 ```
 
 For local development:
@@ -47,7 +44,7 @@ python -m pip install -r requirements.txt
 python -m pip install -e .
 ```
 
-## Run: Azure DevOps
+## Azure DevOps
 
 Set a read-only PAT:
 
@@ -58,7 +55,7 @@ export ADO_PAT="your-token"
 Scan every project in an organization:
 
 ```bash
-appsec-scan-router \
+appsec-inventory-service \
   --provider azure-devops \
   --org FabrikamCloud \
   --out-dir reports
@@ -67,27 +64,27 @@ appsec-scan-router \
 Scan one project:
 
 ```bash
-appsec-scan-router \
+appsec-inventory-service \
   --provider azure-devops \
   --org FabrikamCloud \
   --project "Go_To_Market" \
   --out-dir reports
 ```
 
-`--provider azure-devops` is the default, so existing commands remain valid.
+`azure-devops` is the default provider, so `--provider azure-devops` can be omitted.
 
-## Run: GitHub Enterprise
+## GitHub Enterprise
 
-Set a GitHub token:
+Set a read-only token:
 
 ```bash
 export GITHUB_TOKEN="your-token"
 ```
 
-Scan every repository in an organization:
+Scan every repository owned by an organization or user:
 
 ```bash
-appsec-scan-router \
+appsec-inventory-service \
   --provider github-enterprise \
   --base-url https://github.fabrikam.example/api/v3 \
   --org FabrikamCloud \
@@ -97,26 +94,25 @@ appsec-scan-router \
 Scan one repository:
 
 ```bash
-appsec-scan-router \
+appsec-inventory-service \
   --provider github-enterprise \
   --base-url https://github.fabrikam.example/api/v3 \
   --org FabrikamCloud \
-  --repo mobile-app \
+  --repo payments-api \
   --out-dir reports
 ```
 
-`--project` is also accepted as a repository name for GitHub Enterprise. This keeps automation consistent across
-providers.
+`--project` is accepted as a GitHub repository alias for teams that use one shared automation template.
 
 ## Docker
 
-Build:
+Build the image:
 
 ```bash
-docker build -t appsec-scan-router .
+docker build -t appsec-inventory-service .
 ```
 
-Open the browser UI on port `48731`:
+Run the browser UI on port `48731`:
 
 ```bash
 mkdir -p reports
@@ -125,173 +121,111 @@ docker run --rm \
   -e ADO_PAT="$ADO_PAT" \
   -e GITHUB_TOKEN="$GITHUB_TOKEN" \
   -v "$PWD/reports:/reports" \
-  appsec-scan-router \
+  appsec-inventory-service \
   ui \
   --host 0.0.0.0 \
   --port 48731 \
   --reports-dir /reports
 ```
 
-Then open `http://localhost:48731`.
+Open `http://localhost:48731`.
 
-Run against Azure DevOps:
+Run a CLI scan in the container:
 
 ```bash
 mkdir -p reports
 docker run --rm \
   -e ADO_PAT="$ADO_PAT" \
   -v "$PWD/reports:/reports" \
-  appsec-scan-router \
+  appsec-inventory-service \
   --provider azure-devops \
   --org FabrikamCloud \
   --out-dir /reports
 ```
 
-Run against GitHub Enterprise:
+GitHub Enterprise CLI scan:
 
 ```bash
 mkdir -p reports
 docker run --rm \
   -e GITHUB_TOKEN="$GITHUB_TOKEN" \
   -v "$PWD/reports:/reports" \
-  appsec-scan-router \
+  appsec-inventory-service \
   --provider github-enterprise \
   --base-url https://github.fabrikam.example/api/v3 \
   --org FabrikamCloud \
   --out-dir /reports
 ```
 
-Enable public store validation:
-
-```bash
-docker run --rm \
-  -e GITHUB_TOKEN="$GITHUB_TOKEN" \
-  -v "$PWD/reports:/reports" \
-  appsec-scan-router \
-  --provider github-enterprise \
-  --base-url https://github.fabrikam.example/api/v3 \
-  --org FabrikamCloud \
-  --out-dir /reports \
-  --store-lookup \
-  --store-country US
-```
-
-The image runs as a non-root `scanner` user and writes reports to the mounted output directory.
-
-The container entrypoint supports both modes:
-
-```bash
-docker run --rm appsec-scan-router ui --host 0.0.0.0 --port 48731 --reports-dir /reports
-docker run --rm appsec-scan-router --provider azure-devops --org FabrikamCloud --out-dir /reports
-```
+The image runs as a non-root user and writes reports to `/reports`.
 
 ## Browser UI
 
-The UI runs from the Python package and uses browser JavaScript for the client. It is designed as a scan workbench:
-
-- Source selection for Azure DevOps or GitHub Enterprise
-- Token entry or inherited environment token support
-- Confidence, activity, branch age, worker, timeout, and store lookup controls
-- Live console output through server-sent events
-- Run status, elapsed time, detected app count, and stop control
-- Report downloads for generated CSV, JSON, and XLSX files
-- Local form persistence without storing tokens
-
-Start it locally:
-
 ```bash
-appsec-scan-router-ui --host 127.0.0.1 --port 48731 --reports-dir reports
+appsec-inventory-service-ui --host 127.0.0.1 --port 48731 --reports-dir reports
 ```
 
-The default UI port is `48731`. Override it with `--port` or `APPSEC_SCAN_ROUTER_UI_PORT`.
+The UI includes provider selection, token entry, whole-organization scans, confidence controls, activity mode,
+branch age cutoff, worker tuning, store lookup, live logs, stop control, and report downloads.
 
-## Permissions
+Preferred environment variables:
 
-Azure DevOps:
+| Variable | Purpose |
+| --- | --- |
+| `APPSEC_INVENTORY_SERVICE_UI_HOST` | Default UI host |
+| `APPSEC_INVENTORY_SERVICE_UI_PORT` | Default UI port |
+| `APPSEC_INVENTORY_SERVICE_REPORTS_DIR` | Default reports directory |
 
-- Projects: read
-- Code: read
-- Build: read, only needed for pipeline-based fallback branch detection
-
-GitHub Enterprise:
-
-- Repository metadata: read
-- Repository contents: read
-- Commit history: read
-- Deployments: read, only needed for deployment-based fallback branch detection
-
-Use read-only tokens with the smallest practical scope. Prefer environment variables over `--pat` so tokens do not
-land in shell history.
+Legacy `APPSEC_SCAN_ROUTER_*` UI variables are still accepted.
 
 ## Branch Selection
 
-The scanner evaluates one branch per repository.
+Each repository contributes one branch to the inventory.
 
-If a default branch exists, it scans that branch. If no default branch exists, it tries to identify the branch most
-likely to represent shipped code:
+1. If the repository has a default branch, that branch is scanned.
+2. If no default branch exists, Azure DevOps build definitions or GitHub deployment refs are inspected.
+3. If those are unavailable, the scanner chooses the strongest production or mainline branch name, including
+   `production`, `prod`, `preprod`, `release`, `staging`, `main`, `master`, `development`, `develop`, and `dev`.
 
-- Azure DevOps build definitions and branch filters
-- GitHub Enterprise deployment refs for production-like environments
-- Branch-name fallback using production and mainline naming patterns
-
-There is no universal production-branch field across Git providers, CI/CD systems, and release platforms. Deployment
-fallback is best-effort and depends on the token's access to build or deployment metadata.
+There is no universal production branch field across source control and delivery platforms. Deployment fallback is
+best-effort and depends on token permissions.
 
 ## Detection Model
 
-The scanner fetches only files that can provide strong mobile signals or app metadata, including:
+Detection is evidence-based. The scanner fetches only allow-listed files that carry application or service signals,
+including:
 
-- `AndroidManifest.xml`
-- `Info.plist`
-- `InfoPlist.strings`
-- `project.pbxproj`
-- `.xcconfig`
-- `build.gradle`
-- `build.gradle.kts`
-- `gradle.properties`
-- `package.json`
-- `app.json`
-- `expo.json`
-- `pubspec.yaml`
-- `.csproj`
-- `.props`
-- `capacitor.config.*`
-- `ionic.config.json`
-- `config.xml`
-- Pipeline YAML files
+- Mobile manifests and project files: `AndroidManifest.xml`, `Info.plist`, `project.pbxproj`, `.xcconfig`, `.csproj`,
+  `pubspec.yaml`, `capacitor.config.*`, `ionic.config.json`, and `config.xml`
+- Build and dependency manifests: `package.json`, `pom.xml`, `build.gradle`, `build.gradle.kts`, `pyproject.toml`,
+  `requirements.txt`, `Pipfile`, `go.mod`, `Cargo.toml`, `composer.json`, and `Gemfile`
+- Runtime and deployment descriptors: `Dockerfile`, Compose files, Helm charts, Kustomize files, Serverless files,
+  Spring application config, Terraform `main.tf`, and Azure pipeline YAML
 
-Detection is evidence-based. Generic `.csproj` files, generic `config.xml` files, and weak pipeline-only clues are
-not enough on their own to classify a branch as mobile.
+Weak indicators are not enough on their own. A generic `.csproj`, a generic `config.xml`, or a standalone Dockerfile
+will not be treated as a strong application match without supporting framework, manifest, or dependency evidence.
 
-## Metadata
+## Mobile Metadata And Store Validation
 
-The report includes these app fields when they can be read from source:
+Mobile fields are populated when source manifests expose them:
 
-- `mobile_name`
-- `mobile_version`
-- `mobile_identifier`
-- `mobile_identifier_source`
-- `mobile_identifier_status`
+| Field | Meaning |
+| --- | --- |
+| `mobile_name` | App display name |
+| `mobile_version` | App version after placeholder filtering |
+| `mobile_identifier` | Android package or Apple bundle identifier |
+| `mobile_identifier_source` | Source family where the identifier was found |
+| `mobile_identifier_status` | `found` or `missing_from_scanned_files` |
 
-The scanner resolves common indirection patterns before marking an identifier missing:
+The scanner resolves common indirection patterns such as Gradle properties, Xcode build settings, MSBuild props, iOS
+plist references, and Android string resources. It does not invent identifiers. Missing identifiers usually mean the
+value is generated by CI/CD, stored in private variables, assembled by flavor-specific build logic, or absent from the
+scanned branch.
 
-- Gradle placeholders such as `${appId}`
-- Xcode settings such as `$(PRODUCT_BUNDLE_IDENTIFIER)`
-- MSBuild `.props` values
-- iOS plist references
-- Android string resources for display names
-
-The scanner does not invent identifiers. Empty identifiers usually mean the value is generated by CI/CD, secrets,
-private variable groups, flavors, external files, or build logic that is not present in the scanned branch.
-
-Placeholder versions such as `999.999.999` are suppressed so they are not mistaken for real release versions.
-
-## Store Validation
-
-Store lookup is optional:
+Enable public store lookup:
 
 ```bash
-appsec-scan-router \
+appsec-inventory-service \
   --provider azure-devops \
   --org FabrikamCloud \
   --out-dir reports \
@@ -299,53 +233,66 @@ appsec-scan-router \
   --store-country US
 ```
 
-When enabled:
+Store validation fields return `TRUE` when the requested public store listing is found and `FALSE` when lookup is
+disabled, unavailable, missing, or not publicly visible.
 
-- Apple lookup checks public App Store metadata by bundle identifier
-- Google Play lookup checks the public app details page by package identifier
-- Validation fields return `TRUE` when a public listing is found and `FALSE` otherwise
-- Private, internal, unlisted, region-restricted, and console-only apps may not validate through public lookup
+## Outputs
 
-Store validation is enrichment, not source-of-truth ownership. Public listings can differ from source metadata.
+Reports are created when the scan starts and updated as matching assets are detected.
 
-## Performance
+Default output names:
 
-Start with:
+- `appsec_inventory_service.csv`
+- `appsec_inventory_service.json`
+- `appsec_inventory_service.xlsx`
+- `appsec_inventory_service_scanner_targets.csv`
+- `appsec_inventory_service_scanner_targets.json`
+- `appsec_inventory_service_semgrep_targets.txt`
+- `appsec_inventory_service_sonarqube_projects.csv`
 
-```bash
-appsec-scan-router \
-  --provider azure-devops \
-  --org FabrikamCloud \
-  --out-dir reports \
-  --min-confidence medium \
-  --max-workers 8 \
-  --branch-workers 16 \
-  --content-workers 16
-```
+The workbook contains two worksheets by default:
 
-For very large organizations:
+- `Active 90d`
+- `Older 90d`
 
-```bash
-appsec-scan-router \
-  --provider github-enterprise \
-  --base-url https://github.fabrikam.example/api/v3 \
-  --org FabrikamCloud \
-  --out-dir reports \
-  --min-confidence medium \
-  --activity-mode latest \
-  --max-workers 12 \
-  --branch-workers 32 \
-  --content-workers 32
-```
+Changing `--branch-age-days` changes these sheet names, for example `Active 60d` and `Older 60d`.
 
-Concurrency is split across repository preparation, branch scans, and selected-file fetches. Increase workers only
-while the provider is responding cleanly. Reduce them if you see throttling, timeouts, or elevated transient errors.
+Core fields:
 
-Contributor extraction happens only after a branch passes mobile detection. Use `--activity-mode latest` for the
-fastest inventory pass. Use `--activity-mode contributors` when the full contributor column matters more than scan
-time.
+| Field | Meaning |
+| --- | --- |
+| `project` | Azure DevOps project or GitHub owner |
+| `repo_name` | Repository name |
+| `branch_name` | Branch scanned |
+| `branch_last_updated` | Latest commit timestamp seen on that branch |
+| `branch_age_bucket` | Active or older worksheet bucket |
+| `web_url` | Repository browser URL |
+| `source_url` | Clone/source URL when available |
+| `inventory_name` | Best available application or service name |
+| `inventory_version` | Best available application or service version |
+| `inventory_types` | Semicolon-separated inventory types |
+| `primary_language` | Best-effort primary language |
+| `scanner_target` | Source target with branch metadata for downstream scanner orchestration |
+| `semgrep_target` | Semgrep-oriented target reference |
+| `sonarqube_project_key` | Stable SonarQube project key suggestion |
+| `sonarqube_project_name` | SonarQube project display name suggestion |
+| `contributing_developers` | Semicolon-separated commit authors |
+| `last_updated` | Compatibility alias for `branch_last_updated` |
+| `confidence` | Detection confidence |
+| `score` | Weighted evidence score |
+| `categories` | Semicolon-separated detection categories |
+| `type_*` | Excel-filter-friendly inventory type flags |
+| `category_*` | Excel-filter-friendly category flags |
+| `detection_evidence` | JSON evidence details |
 
-Leave `--store-lookup` off for the fastest scan.
+Scanner sidecars:
+
+- `_scanner_targets.csv` and `_scanner_targets.json` are provider-neutral manifests for orchestration jobs.
+- `_semgrep_targets.txt` is a line-oriented target list.
+- `_sonarqube_projects.csv` contains project key/name suggestions, branch, source URL, and context columns.
+
+These files are intended for pipeline glue code that checks out each target and runs tools such as Semgrep,
+SonarQube Scanner, SCA scanners, or custom security checks.
 
 ## CLI Reference
 
@@ -354,11 +301,11 @@ Leave `--store-lookup` off for the fastest scan.
 | `--provider` | `azure-devops` | `azure-devops` or `github-enterprise` |
 | `--org` | required | Azure DevOps organization or GitHub owner |
 | `--project` | all | Azure DevOps project or GitHub repository name |
-| `--repo` | none | GitHub repository name; alias for `--project` |
+| `--repo` | all | GitHub repository name; alias for `--project` |
 | `--base-url` | env | GitHub Enterprise API URL |
 | `--pat` | env | Provider token; prefer `ADO_PAT`, `GITHUB_TOKEN`, or `GHE_TOKEN` |
 | `--out-dir` | current directory | Output directory |
-| `--out-prefix` | `appsec_scan_router` | Output filename prefix |
+| `--out-prefix` | `appsec_inventory_service` | Output filename prefix |
 | `--max-workers` | `8` | Concurrent repository preparation tasks |
 | `--branch-workers` | `16` | Concurrent branch scans |
 | `--content-workers` | `16` | Concurrent selected-file fetches |
@@ -372,65 +319,28 @@ Leave `--store-lookup` off for the fastest scan.
 | `--store-timeout` | `15` | Store lookup timeout in seconds |
 | `--verbose` | disabled | Debug logging |
 
-## Outputs
+## Performance Guidance
 
-Reports are created when the scan starts and updated as apps are detected:
+For first-pass inventory in a large organization:
 
-- `appsec_scan_router.csv`
-- `appsec_scan_router.json`
-- `appsec_scan_router.xlsx`
+```bash
+appsec-inventory-service \
+  --provider github-enterprise \
+  --base-url https://github.fabrikam.example/api/v3 \
+  --org FabrikamCloud \
+  --out-dir reports \
+  --min-confidence medium \
+  --activity-mode latest \
+  --max-workers 12 \
+  --branch-workers 32 \
+  --content-workers 32
+```
 
-The workbook contains:
+Use `--activity-mode latest` when you only need last-update timestamps. Use `--activity-mode contributors` when the
+developer column is required. Leave `--store-lookup` off for the fastest scan.
 
-- `Active 90d`
-- `Older 90d`
-
-Changing `--branch-age-days` changes the sheet names, for example `Active 60d` and `Older 60d`.
-
-Core fields:
-
-| Field | Description |
-| --- | --- |
-| `project` | Azure DevOps project or GitHub owner |
-| `repo_name` | Repository name |
-| `branch_name` | Branch scanned |
-| `branch_last_updated` | Latest commit timestamp seen by the scanner |
-| `branch_age_bucket` | Active or older worksheet bucket |
-| `web_url` | Repository URL |
-| `mobile_name` | Best-effort app display name |
-| `mobile_version` | Best-effort app version |
-| `mobile_identifier` | Best-effort bundle/package identifier |
-| `mobile_identifier_source` | Source family where the identifier was found |
-| `mobile_identifier_status` | `found` or `missing_from_scanned_files` |
-| `contributing_developers` | Semicolon-separated unique commit authors |
-| `last_updated` | Same value as `branch_last_updated`, retained for compatibility |
-| `confidence` | Detection confidence |
-| `score` | Weighted evidence score |
-| `categories` | Semicolon-separated category names |
-| `category_*` | Excel-filter-friendly `TRUE` or `FALSE` columns |
-| `detection_evidence` | JSON evidence details |
-
-Store fields:
-
-| Field | Description |
-| --- | --- |
-| `store_lookup_status` | Aggregate lookup status |
-| `store_validation_passed` | `TRUE` when every requested store validation passes |
-| `store_platforms` | Stores where a public listing was found |
-| `apple_app_store_name` | Public Apple App Store app name |
-| `apple_app_store_identifier` | Bundle identifier returned by Apple |
-| `apple_app_store_url` | Public Apple App Store URL |
-| `apple_app_store_version` | Public Apple App Store version |
-| `apple_app_store_last_updated` | Public Apple App Store release/update timestamp |
-| `apple_app_store_validation_passed` | Apple validation result |
-| `apple_app_store_lookup_status` | Apple lookup status |
-| `google_play_name` | Public Google Play app name |
-| `google_play_identifier` | Google Play package identifier checked |
-| `google_play_url` | Public Google Play URL |
-| `google_play_version` | Best-effort public page version |
-| `google_play_last_updated` | Best-effort public page update date |
-| `google_play_validation_passed` | Google Play validation result |
-| `google_play_lookup_status` | Google Play lookup status |
+Increase workers only while the source provider is responding cleanly. Reduce concurrency if you see throttling,
+timeouts, or repeated transient errors.
 
 ## SDK
 
@@ -446,7 +356,7 @@ config = ScanConfig(
     pat="your-token",
     project=None,
     out_dir=Path("reports"),
-    out_prefix="appsec_scan_router",
+    out_prefix="appsec_inventory_service",
     max_workers=8,
     branch_workers=16,
     content_workers=16,
@@ -466,10 +376,10 @@ results, csv_path, json_path, xlsx_path = scan_to_reports(config)
 Object-oriented usage:
 
 ```python
-from appsec_scan_router import AppSecScanRouter
+from appsec_scan_router import AppSecInventoryService
 
-router = AppSecScanRouter(config)
-results, csv_path, json_path, xlsx_path = router.scan_to_reports()
+service = AppSecInventoryService(config)
+results, csv_path, json_path, xlsx_path = service.scan_to_reports()
 ```
 
 Stream rows into another process:
@@ -478,46 +388,23 @@ Stream rows into another process:
 from appsec_scan_router import scan
 
 def handle_row(row):
-    print(row["project"], row["repo_name"], row["branch_name"], row["mobile_identifier"])
+    print(row["project"], row["repo_name"], row["branch_name"], row["inventory_types"])
 
 rows = scan(config, on_result=handle_row)
 ```
 
-Legacy imports and commands remain available for compatibility:
+## Compatibility
+
+These commands remain available:
 
 ```bash
+appsec-scan-router --help
+appsec-scan-router-ui --help
 mobile-app-inventory-tracer --org FabrikamCloud --out-dir reports
 ado-mobile-scanner --org FabrikamCloud --out-dir reports
 ```
 
-New integrations should import `appsec_scan_router`.
-
-## Project Layout
-
-```text
-appsec_scan_router/
-  activity.py
-  azure.py
-  cli.py
-  constants.py
-  detection.py
-  entrypoint.py
-  github.py
-  metadata.py
-  models.py
-  reports.py
-  scanner.py
-  sdk.py
-  store_lookup.py
-  ui.py
-  ui_static/
-  utils.py
-mobile_scanner/
-ado_mobile_scanner.py
-mobile_app_inventory_tracer.py
-tests/
-Dockerfile
-```
+New integrations should import `appsec_scan_router` and prefer the `appsec-inventory-service` command.
 
 ## Test
 
@@ -530,11 +417,12 @@ python -m compileall ado_mobile_scanner.py mobile_app_inventory_tracer.py appsec
 
 - Use read-only tokens
 - Scope tokens to the smallest practical organization, project, or repository set
-- Do not commit generated reports if they contain internal names or contributor emails
+- Prefer environment variables over `--pat`
+- Do not commit generated reports if they contain internal names, URLs, identifiers, or contributor emails
 - The scanner does not clone repositories
 - The scanner fetches only allow-listed source and configuration files
 - Docker runs as a non-root user
 
 ## License
 
-AppSec Scan Router is released under the MIT License. See [LICENSE](LICENSE).
+AppSec Inventory Service is released under the MIT License. See [LICENSE](LICENSE).

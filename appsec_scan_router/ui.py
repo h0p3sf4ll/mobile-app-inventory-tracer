@@ -23,7 +23,7 @@ from urllib.parse import unquote, urlparse
 DEFAULT_UI_HOST = "127.0.0.1"
 DEFAULT_UI_PORT = 48731
 MAX_LOG_LINES = 5000
-REPORT_EXTENSIONS = frozenset({".csv", ".json", ".xlsx"})
+REPORT_EXTENSIONS = frozenset({".csv", ".json", ".xlsx", ".txt"})
 SCAN_STATUSES_DONE = frozenset({"succeeded", "failed", "stopped"})
 
 
@@ -115,7 +115,7 @@ class ScanRun:
     def summary(self) -> dict[str, Any]:
         with self.lock:
             logs_tail = self.logs[-300:]
-            detected = sum(1 for line in self.logs if "DETECTED app=" in line)
+            detected = sum(1 for line in self.logs if "DETECTED asset=" in line or "DETECTED app=" in line)
             provider = str(self.config.get("provider", "azure-devops"))
             target = str(self.config.get("repo") or self.config.get("project") or "all")
             return {
@@ -124,7 +124,7 @@ class ScanRun:
                 "provider": provider,
                 "org": str(self.config.get("org", "")),
                 "target": target,
-                "outPrefix": str(self.config.get("outPrefix", "appsec_scan_router")),
+                "outPrefix": str(self.config.get("outPrefix", "appsec_inventory_service")),
                 "startedAt": self.started_at,
                 "endedAt": self.ended_at,
                 "exitCode": self.exit_code,
@@ -407,7 +407,7 @@ def normalize_scan_config(config: dict[str, Any]) -> dict[str, Any]:
         "repo": clean_text(config.get("repo")),
         "baseUrl": base_url,
         "token": clean_text(config.get("token")),
-        "outPrefix": safe_prefix(clean_text(config.get("outPrefix")) or "appsec_scan_router"),
+        "outPrefix": safe_prefix(clean_text(config.get("outPrefix")) or "appsec_inventory_service"),
         "minConfidence": clean_choice(config.get("minConfidence"), {"low", "medium", "high"}, "low"),
         "activityMode": clean_choice(config.get("activityMode"), {"contributors", "latest"}, "contributors"),
         "maxWorkers": positive_int(config.get("maxWorkers"), 8),
@@ -503,7 +503,7 @@ def default_ui_config(reports_root: Path) -> dict[str, Any]:
     return {
         "defaults": {
             "provider": "azure-devops",
-            "outPrefix": "appsec_scan_router",
+            "outPrefix": "appsec_inventory_service",
             "minConfidence": "medium",
             "activityMode": "latest",
             "maxWorkers": 8,
@@ -524,6 +524,7 @@ def report_content_type(path: Path) -> str:
         ".csv": "text/csv",
         ".json": "application/json",
         ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ".txt": "text/plain",
     }.get(path.suffix.lower(), "application/octet-stream")
 
 
@@ -543,7 +544,7 @@ def clean_choice(value: Any, allowed: set[str], default: str) -> str:
 
 def safe_prefix(value: str) -> str:
     text = re.sub(r"[^A-Za-z0-9_.-]+", "_", value).strip("._-")
-    return text or "appsec_scan_router"
+    return text or "appsec_inventory_service"
 
 
 def positive_int(value: Any, default: int) -> int:
@@ -570,31 +571,41 @@ def serve(host: str, port: int, reports_dir: Path) -> None:
     manager = ScanManager(reports_dir.resolve())
     handler = type("ConfiguredAppSecScanRouterHandler", (AppSecScanRouterHandler,), {"manager": manager})
     server = ThreadingHTTPServer((host, port), handler)
-    print(f"AppSec Scan Router UI listening on http://{host}:{port}")
+    print(f"AppSec Inventory Service UI listening on http://{host}:{port}")
     print(f"Reports root: {manager.reports_root}")
     try:
         server.serve_forever(poll_interval=0.5)
     except KeyboardInterrupt:
-        print("AppSec Scan Router UI stopped.")
+        print("AppSec Inventory Service UI stopped.")
     finally:
         server.server_close()
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        prog="appsec-scan-router-ui",
-        description="Run the AppSec Scan Router web UI.",
+        prog="appsec-inventory-service-ui",
+        description="Run the AppSec Inventory Service web UI.",
     )
-    parser.add_argument("--host", default=os.getenv("APPSEC_SCAN_ROUTER_UI_HOST", DEFAULT_UI_HOST))
+    parser.add_argument(
+        "--host",
+        default=os.getenv("APPSEC_INVENTORY_SERVICE_UI_HOST")
+        or os.getenv("APPSEC_SCAN_ROUTER_UI_HOST", DEFAULT_UI_HOST),
+    )
     parser.add_argument(
         "--port",
         type=int,
-        default=int(os.getenv("APPSEC_SCAN_ROUTER_UI_PORT", str(DEFAULT_UI_PORT))),
+        default=int(
+            os.getenv("APPSEC_INVENTORY_SERVICE_UI_PORT")
+            or os.getenv("APPSEC_SCAN_ROUTER_UI_PORT", str(DEFAULT_UI_PORT))
+        ),
     )
     parser.add_argument(
         "--reports-dir",
         type=Path,
-        default=Path(os.getenv("APPSEC_SCAN_ROUTER_REPORTS_DIR", "reports")),
+        default=Path(
+            os.getenv("APPSEC_INVENTORY_SERVICE_REPORTS_DIR")
+            or os.getenv("APPSEC_SCAN_ROUTER_REPORTS_DIR", "reports")
+        ),
     )
     return parser.parse_args(argv)
 

@@ -31,7 +31,7 @@ class AzureDevOpsClient:
         self._headers = {
             "Authorization": self._auth_header_value(pat),
             "Accept": "application/json",
-            "User-Agent": "appsec-scan-router/1.0",
+            "User-Agent": "appsec-inventory-service/1.3",
         }
         self._retry = Retry(
             total=5,

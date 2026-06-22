@@ -3,15 +3,15 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>AppSec Scan Router</title>
+    <title>AppSec Inventory Service</title>
     <link rel="stylesheet" href="/static/styles.css">
   </head>
   <body>
     <main class="shell">
       <header class="topbar">
         <div>
-          <p class="eyebrow">Mobile inventory</p>
-          <h1>AppSec Scan Router</h1>
+          <p class="eyebrow">Application inventory</p>
+          <h1>AppSec Inventory Service</h1>
         </div>
         <div class="topbar-actions">
           <button class="ghost" id="refreshScans" type="button">Refresh</button>
@@ -44,11 +44,11 @@
             </label>
             <label class="provider-azure">
               <span>Project</span>
-              <input name="project">
+              <input name="project" placeholder="All projects">
             </label>
             <label class="provider-github hidden">
               <span>Repository</span>
-              <input name="repo">
+              <input name="repo" placeholder="All repositories">
             </label>
             <label class="provider-github hidden full">
               <span>GitHub API URL</span>
@@ -69,7 +69,7 @@
           <div class="field-grid">
             <label>
               <span>Output prefix</span>
-              <input name="outPrefix" value="appsec_scan_router">
+              <input name="outPrefix" value="appsec_inventory_service">
             </label>
             <label>
               <span>Confidence</span>
@@ -137,7 +137,7 @@
                 <strong id="activeStatus">Idle</strong>
               </div>
               <div>
-                <span class="metric-label">Apps</span>
+                <span class="metric-label">Assets</span>
                 <strong id="detectedCount">0</strong>
               </div>
               <div>
@@ -155,7 +155,7 @@
                 <button class="danger" id="stopScan" type="button" disabled>Stop</button>
               </div>
             </div>
-            <pre class="command-line" id="commandLine">appsec-scan-router</pre>
+            <pre class="command-line" id="commandLine">appsec-inventory-service</pre>
           </div>
 
           <div class="work-grid">

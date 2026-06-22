@@ -48,6 +48,30 @@ def detect_mobile_repo(
     return confidence, evidence, score
 
 
+def detect_inventory_repo(
+    paths: Iterable[str],
+    file_contents: dict[str, str],
+) -> tuple[str, list[DetectionEvidence], int]:
+    evidence = collect_inventory_evidence(paths, file_contents)
+    score = sum(item.weight for item in evidence)
+    has_strong_evidence = any(item.weight >= 3 for item in evidence)
+    has_structural_evidence = any(
+        item.category not in {"pipeline_mobile", "containerized_service", "infrastructure_as_code"}
+        for item in evidence
+    )
+
+    if score >= 8 and has_strong_evidence and has_structural_evidence:
+        confidence = "high"
+    elif score >= 3 and has_strong_evidence and has_structural_evidence:
+        confidence = "medium"
+    elif score >= 2 and has_structural_evidence:
+        confidence = "low"
+    else:
+        confidence = "none"
+
+    return confidence, evidence, score
+
+
 def collect_detection_evidence(
     paths: Iterable[str],
     file_contents: dict[str, str],
@@ -91,6 +115,53 @@ def collect_detection_evidence(
     return dedupe_evidence(evidence)
 
 
+def collect_inventory_evidence(
+    paths: Iterable[str],
+    file_contents: dict[str, str],
+) -> list[DetectionEvidence]:
+    evidence = collect_detection_evidence(paths, file_contents)
+    path_set = {normalize_path(path).lower() for path in paths}
+    evidence.extend(collect_inventory_path_evidence(path_set))
+
+    for path, content in file_contents.items():
+        lower_path = normalize_path(path).lower()
+        if lower_path.endswith("package.json"):
+            evidence.extend(detect_package_json_inventory_evidence(path, content))
+        elif lower_path.endswith("build.gradle") or lower_path.endswith("build.gradle.kts"):
+            evidence.extend(detect_gradle_inventory_evidence(path, content))
+        elif lower_path.endswith("pom.xml"):
+            evidence.extend(detect_pom_inventory_evidence(path, content))
+        elif (
+            lower_path.endswith("requirements.txt")
+            or lower_path.endswith("pyproject.toml")
+            or lower_path.endswith("pipfile")
+        ):
+            evidence.extend(detect_python_inventory_evidence(path, content))
+        elif lower_path.endswith("go.mod"):
+            evidence.extend(detect_go_mod_inventory_evidence(path, content))
+        elif lower_path.endswith(".csproj"):
+            evidence.extend(detect_csproj_inventory_evidence(path, content))
+        elif lower_path.endswith("dockerfile") or "docker-compose" in lower_path or lower_path.endswith("/compose.yml") or lower_path.endswith("/compose.yaml"):
+            evidence.extend(detect_container_evidence(path, content))
+        elif lower_path.endswith("serverless.yml") or lower_path.endswith("serverless.yaml"):
+            evidence.extend(detect_serverless_evidence(path, content))
+        elif (
+            lower_path.endswith("chart.yaml")
+            or lower_path.endswith("kustomization.yaml")
+            or lower_path.endswith("main.tf")
+            or lower_path.endswith("values.yaml")
+        ):
+            evidence.extend(detect_infrastructure_evidence(path, content))
+        elif (
+            lower_path.endswith("application.yml")
+            or lower_path.endswith("application.yaml")
+            or lower_path.endswith("application.properties")
+        ):
+            evidence.extend(detect_application_config_evidence(path, content))
+
+    return dedupe_evidence(evidence)
+
+
 def collect_path_evidence(path_set: set[str]) -> list[DetectionEvidence]:
     evidence: list[DetectionEvidence] = []
     has_android_dir = any(path.startswith("/android/") or "/android/" in path for path in path_set)
@@ -114,6 +185,34 @@ def collect_path_evidence(path_set: set[str]) -> list[DetectionEvidence]:
                 2,
             )
         )
+    return evidence
+
+
+def collect_inventory_path_evidence(path_set: set[str]) -> list[DetectionEvidence]:
+    evidence: list[DetectionEvidence] = []
+    if any(path.endswith("/dockerfile") or "/dockerfile" in path for path in path_set):
+        evidence.append(DetectionEvidence("containerized_service", "dockerfile_path", "Dockerfile present", 1))
+    if any("docker-compose" in path or path.endswith("/compose.yml") or path.endswith("/compose.yaml") for path in path_set):
+        evidence.append(DetectionEvidence("containerized_service", "compose_path", "Compose file present", 1))
+    if any(path.endswith("/serverless.yml") or path.endswith("/serverless.yaml") for path in path_set):
+        evidence.append(DetectionEvidence("serverless", "serverless_path", "Serverless configuration present", 2))
+    if any(
+        path.endswith("/chart.yaml") or path.endswith("/kustomization.yaml") or path.endswith("/main.tf")
+        for path in path_set
+    ):
+        evidence.append(
+            DetectionEvidence("infrastructure_as_code", "deployment_config_path", "Deployment configuration present", 1)
+        )
+    if any(
+        path.endswith("/index.html")
+        or path.endswith("/src/app.ts")
+        or path.endswith("/src/app.tsx")
+        or path.endswith("/src/main.ts")
+        or path.endswith("/src/main.tsx")
+        or path.endswith("/src/app.jsx")
+        for path in path_set
+    ):
+        evidence.append(DetectionEvidence("web_frontend", "web_source_layout", "Frontend source layout present", 1))
     return evidence
 
 
@@ -201,6 +300,171 @@ def detect_package_json_evidence(path: str, content: str) -> list[DetectionEvide
     if "cordova" in dependencies or "cordova-android" in dependencies or "cordova-ios" in dependencies:
         evidence.append(DetectionEvidence("ionic_capacitor_cordova", path, "package.json Cordova dependency", 3))
     return evidence
+
+
+def detect_package_json_inventory_evidence(path: str, content: str) -> list[DetectionEvidence]:
+    data = load_json_object(content)
+    dependencies = merged_package_dependencies(data)
+    evidence: list[DetectionEvidence] = []
+
+    if dependencies & {
+        "@angular/core",
+        "@remix-run/react",
+        "@sveltejs/kit",
+        "next",
+        "nuxt",
+        "react",
+        "svelte",
+        "vite",
+        "vue",
+    }:
+        evidence.append(DetectionEvidence("web_frontend", path, "package.json frontend framework dependency", 4))
+    if dependencies & {
+        "@apollo/server",
+        "@fastify/autoload",
+        "@nestjs/core",
+        "@trpc/server",
+        "apollo-server",
+        "express",
+        "fastify",
+        "graphql-yoga",
+        "hapi",
+        "koa",
+    }:
+        evidence.append(DetectionEvidence("web_backend", path, "package.json backend framework dependency", 4))
+        evidence.append(DetectionEvidence("api_service", path, "package.json API framework dependency", 3))
+    if dependencies & {"@grpc/grpc-js", "grpc", "moleculer", "seneca"}:
+        evidence.append(DetectionEvidence("microservice", path, "package.json service framework dependency", 3))
+        evidence.append(DetectionEvidence("api_service", path, "package.json service API dependency", 2))
+    if dependencies & {
+        "@azure/service-bus",
+        "amqplib",
+        "bull",
+        "bullmq",
+        "ioredis",
+        "kafkajs",
+        "node-rdkafka",
+        "redis",
+    }:
+        evidence.append(DetectionEvidence("middleware", path, "package.json messaging or queue dependency", 3))
+    if dependencies & {"@azure/functions", "@netlify/functions", "@vercel/node", "aws-lambda", "serverless"}:
+        evidence.append(DetectionEvidence("serverless", path, "package.json serverless dependency", 3))
+    if has_script(data, ("start", "serve")) and evidence:
+        evidence.append(DetectionEvidence("microservice", path, "package.json runtime script", 1))
+    return evidence
+
+
+def detect_gradle_inventory_evidence(path: str, content: str) -> list[DetectionEvidence]:
+    lowered = content.lower()
+    evidence: list[DetectionEvidence] = []
+    if any(token in lowered for token in ("org.springframework.boot", "spring-boot", "io.quarkus", "micronaut", "ktor")):
+        evidence.append(DetectionEvidence("microservice", path, "Gradle service framework plugin or dependency", 4))
+    if any(token in lowered for token in ("spring-boot-starter-web", "spring-boot-starter-webflux", "jaxrs", "grpc")):
+        evidence.append(DetectionEvidence("api_service", path, "Gradle API framework dependency", 3))
+        evidence.append(DetectionEvidence("web_backend", path, "Gradle web backend dependency", 3))
+    if any(token in lowered for token in ("spring-kafka", "kafka-clients", "rabbitmq", "amqp", "camel-", "activemq")):
+        evidence.append(DetectionEvidence("middleware", path, "Gradle messaging or integration dependency", 3))
+    return evidence
+
+
+def detect_pom_inventory_evidence(path: str, content: str) -> list[DetectionEvidence]:
+    lowered = content.lower()
+    evidence: list[DetectionEvidence] = []
+    if any(token in lowered for token in ("spring-boot", "quarkus", "micronaut", "helidon", "ktor")):
+        evidence.append(DetectionEvidence("microservice", path, "Maven service framework dependency", 4))
+    if any(token in lowered for token in ("spring-boot-starter-web", "spring-boot-starter-webflux", "jakarta.ws.rs", "javax.ws.rs", "grpc")):
+        evidence.append(DetectionEvidence("api_service", path, "Maven API framework dependency", 3))
+        evidence.append(DetectionEvidence("web_backend", path, "Maven web backend dependency", 3))
+    if any(token in lowered for token in ("spring-kafka", "kafka-clients", "rabbitmq", "amqp", "camel-", "activemq")):
+        evidence.append(DetectionEvidence("middleware", path, "Maven messaging or integration dependency", 3))
+    return evidence
+
+
+def detect_python_inventory_evidence(path: str, content: str) -> list[DetectionEvidence]:
+    lowered = content.lower()
+    evidence: list[DetectionEvidence] = []
+    if dependency_text_has_any(lowered, ("django", "fastapi", "flask", "starlette", "tornado")):
+        evidence.append(DetectionEvidence("web_backend", path, "Python web framework dependency", 4))
+        evidence.append(DetectionEvidence("api_service", path, "Python API framework dependency", 3))
+    if dependency_text_has_any(lowered, ("grpcio", "nameko", "pyro5")):
+        evidence.append(DetectionEvidence("microservice", path, "Python service framework dependency", 3))
+        evidence.append(DetectionEvidence("api_service", path, "Python service API dependency", 2))
+    if dependency_text_has_any(lowered, ("celery", "confluent-kafka", "dramatiq", "kafka-python", "pika", "rq")):
+        evidence.append(DetectionEvidence("middleware", path, "Python messaging or worker dependency", 3))
+    if dependency_text_has_any(lowered, ("azure-functions", "functions-framework")):
+        evidence.append(DetectionEvidence("serverless", path, "Python serverless dependency", 3))
+    return evidence
+
+
+def detect_go_mod_inventory_evidence(path: str, content: str) -> list[DetectionEvidence]:
+    lowered = content.lower()
+    evidence: list[DetectionEvidence] = []
+    if any(token in lowered for token in ("gin-gonic/gin", "go-chi/chi", "gofiber/fiber", "gorilla/mux", "labstack/echo")):
+        evidence.append(DetectionEvidence("web_backend", path, "Go web framework dependency", 4))
+        evidence.append(DetectionEvidence("api_service", path, "Go API framework dependency", 3))
+    if any(token in lowered for token in ("google.golang.org/grpc", "go-micro.dev", "micro.dev")):
+        evidence.append(DetectionEvidence("microservice", path, "Go service framework dependency", 3))
+        evidence.append(DetectionEvidence("api_service", path, "Go service API dependency", 2))
+    if any(token in lowered for token in ("shopify/sarama", "confluent-kafka-go", "streadway/amqp", "rabbitmq/amqp")):
+        evidence.append(DetectionEvidence("middleware", path, "Go messaging dependency", 3))
+    return evidence
+
+
+def detect_csproj_inventory_evidence(path: str, content: str) -> list[DetectionEvidence]:
+    lowered = content.lower()
+    evidence: list[DetectionEvidence] = []
+    if "microsoft.net.sdk.web" in lowered or "microsoft.aspnetcore" in lowered:
+        evidence.append(DetectionEvidence("web_backend", path, ".NET web SDK or ASP.NET dependency", 4))
+        evidence.append(DetectionEvidence("api_service", path, ".NET API-capable project", 3))
+    if "microsoft.net.sdk.worker" in lowered or "backgroundservice" in lowered or "ihostedservice" in lowered:
+        evidence.append(DetectionEvidence("microservice", path, ".NET worker service project", 3))
+        evidence.append(DetectionEvidence("middleware", path, ".NET background worker project", 2))
+    if "grpc" in lowered:
+        evidence.append(DetectionEvidence("api_service", path, ".NET gRPC dependency", 3))
+        evidence.append(DetectionEvidence("microservice", path, ".NET gRPC service dependency", 2))
+    return evidence
+
+
+def detect_container_evidence(path: str, content: str) -> list[DetectionEvidence]:
+    lowered = content.lower()
+    if any(token in lowered for token in (" from ", "from ", "services:", "image:", "build:", "expose ", "cmd ", "entrypoint ")):
+        return [DetectionEvidence("containerized_service", path, "Container runtime configuration", 2)]
+    return []
+
+
+def detect_serverless_evidence(path: str, content: str) -> list[DetectionEvidence]:
+    lowered = content.lower()
+    if "functions:" in lowered or "provider:" in lowered or "handler:" in lowered:
+        return [DetectionEvidence("serverless", path, "Serverless functions configuration", 4)]
+    return []
+
+
+def detect_infrastructure_evidence(path: str, content: str) -> list[DetectionEvidence]:
+    lowered = content.lower()
+    if any(token in lowered for token in ("apiversion:", "kind:", "resources:", "provider ", "resource ", "module ")):
+        return [DetectionEvidence("infrastructure_as_code", path, "Infrastructure or deployment manifest", 1)]
+    return []
+
+
+def detect_application_config_evidence(path: str, content: str) -> list[DetectionEvidence]:
+    lowered = content.lower()
+    evidence: list[DetectionEvidence] = []
+    if "spring.application.name" in lowered or "server.port" in lowered:
+        evidence.append(DetectionEvidence("microservice", path, "Spring application runtime configuration", 1))
+    if "management.endpoints.web" in lowered:
+        evidence.append(DetectionEvidence("web_backend", path, "Spring web management endpoints configured", 1))
+    return evidence
+
+
+def has_script(data: dict[str, object], names: Iterable[str]) -> bool:
+    scripts = data.get("scripts")
+    if not isinstance(scripts, dict):
+        return False
+    return any(name in scripts and str(scripts.get(name) or "").strip() for name in names)
+
+
+def dependency_text_has_any(content: str, names: Iterable[str]) -> bool:
+    return any(re.search(rf"(?<![a-z0-9_.-]){re.escape(name)}(?![a-z0-9_.-])", content) for name in names)
 
 
 def detect_expo_evidence(path: str, content: str) -> list[DetectionEvidence]:

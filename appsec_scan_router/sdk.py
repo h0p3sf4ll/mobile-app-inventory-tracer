@@ -8,7 +8,7 @@ from .models import ScanConfig
 from .scanner import scan, scan_to_reports
 
 
-class AppSecScanRouter:
+class AppSecInventoryService:
     def __init__(self, config: ScanConfig) -> None:
         self.config = config
 
@@ -17,3 +17,6 @@ class AppSecScanRouter:
 
     def scan_to_reports(self) -> tuple[list[dict[str, Any]], Path, Path, Path]:
         return scan_to_reports(self.config)
+
+
+AppSecScanRouter = AppSecInventoryService

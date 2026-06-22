@@ -4,20 +4,25 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "appsec-scan-router"
-version = "1.2.0"
-description = "SDK, CLI, and UI for routing mobile app inventory scans across Azure DevOps and GitHub Enterprise"
+version = "1.3.0"
+description = "SDK, CLI, UI, and scanner target manifests for application inventory across Azure DevOps and GitHub Enterprise"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
-authors = [{name = "AppSec Scan Router contributors"}]
+authors = [{name = "AppSec Inventory Service contributors"}]
 keywords = [
     "appsec",
     "sdk",
     "azure-devops",
     "github-enterprise",
     "mobile",
+    "web-applications",
+    "microservices",
+    "middleware",
     "inventory",
+    "semgrep",
+    "sonarqube",
     "android",
     "ios",
     "app-store",
@@ -45,6 +50,9 @@ Repository = "https://github.com/h0p3sf4ll/mobile-app-inventory-tracer"
 Issues = "https://github.com/h0p3sf4ll/mobile-app-inventory-tracer/issues"
 
 [project.scripts]
+appsec-inventory-service = "appsec_scan_router.cli:main"
+appsec-inventory-service-ui = "appsec_scan_router.ui:main"
+appsec-inventory-service-container = "appsec_scan_router.entrypoint:main"
 appsec-scan-router = "appsec_scan_router.cli:main"
 appsec-scan-router-ui = "appsec_scan_router.ui:main"
 appsec-scan-router-container = "appsec_scan_router.entrypoint:main"

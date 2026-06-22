@@ -10,7 +10,14 @@ from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
-from .constants import CSV_FIELDNAMES, DEFAULT_BRANCH_AGE_DAYS, active_sheet_name, older_sheet_name
+from .constants import (
+    CSV_FIELDNAMES,
+    DEFAULT_BRANCH_AGE_DAYS,
+    SCANNER_TARGET_FIELDNAMES,
+    SONARQUBE_FIELDNAMES,
+    active_sheet_name,
+    older_sheet_name,
+)
 
 WORKBOOK_COLUMN_WIDTHS = {
     "project": 24,
@@ -19,6 +26,15 @@ WORKBOOK_COLUMN_WIDTHS = {
     "branch_last_updated": 22,
     "branch_age_bucket": 14,
     "web_url": 42,
+    "source_url": 52,
+    "inventory_name": 30,
+    "inventory_version": 18,
+    "inventory_types": 30,
+    "primary_language": 18,
+    "scanner_target": 60,
+    "semgrep_target": 60,
+    "sonarqube_project_key": 44,
+    "sonarqube_project_name": 34,
     "mobile_name": 28,
     "mobile_version": 16,
     "mobile_identifier": 34,
@@ -71,9 +87,19 @@ class StreamingReportWriter:
         self.csv_path = out_dir / f"{out_prefix}.csv"
         self.json_path = out_dir / f"{out_prefix}.json"
         self.xlsx_path = out_dir / f"{out_prefix}.xlsx"
+        self.scanner_targets_csv_path = out_dir / f"{out_prefix}_scanner_targets.csv"
+        self.scanner_targets_json_path = out_dir / f"{out_prefix}_scanner_targets.json"
+        self.semgrep_targets_path = out_dir / f"{out_prefix}_semgrep_targets.txt"
+        self.sonarqube_projects_path = out_dir / f"{out_prefix}_sonarqube_projects.csv"
         self._csv_file: TextIO | None = None
         self._json_file: TextIO | None = None
+        self._scanner_targets_csv_file: TextIO | None = None
+        self._scanner_targets_json_file: TextIO | None = None
+        self._semgrep_targets_file: TextIO | None = None
+        self._sonarqube_projects_file: TextIO | None = None
         self._csv_writer: csv.DictWriter[str] | None = None
+        self._scanner_targets_writer: csv.DictWriter[str] | None = None
+        self._sonarqube_projects_writer: csv.DictWriter[str] | None = None
         self._workbook: Workbook | None = None
         self._sheets: dict[str, Worksheet] = {}
         self._row_count = 0
@@ -83,9 +109,24 @@ class StreamingReportWriter:
         self.out_dir.mkdir(parents=True, exist_ok=True)
         self._csv_file = self.csv_path.open("w", newline="", encoding="utf-8")
         self._json_file = self.json_path.open("w", encoding="utf-8")
+        self._scanner_targets_csv_file = self.scanner_targets_csv_path.open("w", newline="", encoding="utf-8")
+        self._scanner_targets_json_file = self.scanner_targets_json_path.open("w", encoding="utf-8")
+        self._semgrep_targets_file = self.semgrep_targets_path.open("w", encoding="utf-8")
+        self._sonarqube_projects_file = self.sonarqube_projects_path.open("w", newline="", encoding="utf-8")
         self._csv_writer = csv.DictWriter(self._csv_file, fieldnames=CSV_FIELDNAMES)
+        self._scanner_targets_writer = csv.DictWriter(
+            self._scanner_targets_csv_file,
+            fieldnames=SCANNER_TARGET_FIELDNAMES,
+        )
+        self._sonarqube_projects_writer = csv.DictWriter(
+            self._sonarqube_projects_file,
+            fieldnames=SONARQUBE_FIELDNAMES,
+        )
         self._csv_writer.writeheader()
+        self._scanner_targets_writer.writeheader()
+        self._sonarqube_projects_writer.writeheader()
         self._json_file.write("[\n")
+        self._scanner_targets_json_file.write("[\n")
         self._create_workbook()
         self._save_workbook()
         self.flush()
@@ -95,13 +136,26 @@ class StreamingReportWriter:
         self.close()
 
     def write_result(self, result: dict[str, object]) -> None:
-        if self._csv_writer is None or self._json_file is None:
+        if (
+            self._csv_writer is None
+            or self._json_file is None
+            or self._scanner_targets_writer is None
+            or self._scanner_targets_json_file is None
+            or self._sonarqube_projects_writer is None
+        ):
             raise RuntimeError("StreamingReportWriter must be opened before writing.")
 
         self._csv_writer.writerow(result)
+        target_row = scanner_target_row(result)
+        self._scanner_targets_writer.writerow(target_row)
+        self._sonarqube_projects_writer.writerow(sonarqube_project_row(result))
+        if self._semgrep_targets_file and result.get("semgrep_target"):
+            self._semgrep_targets_file.write(f"{result.get('semgrep_target')}\n")
         if self._row_count:
             self._json_file.write(",\n")
+            self._scanner_targets_json_file.write(",\n")
         json.dump(result, self._json_file, indent=2)
+        json.dump(target_row, self._scanner_targets_json_file, indent=2)
         self._row_count += 1
         self._append_workbook_row(result)
         if self._row_count % self._xlsx_save_interval == 0:
@@ -113,6 +167,14 @@ class StreamingReportWriter:
             self._csv_file.flush()
         if self._json_file:
             self._json_file.flush()
+        if self._scanner_targets_csv_file:
+            self._scanner_targets_csv_file.flush()
+        if self._scanner_targets_json_file:
+            self._scanner_targets_json_file.flush()
+        if self._semgrep_targets_file:
+            self._semgrep_targets_file.flush()
+        if self._sonarqube_projects_file:
+            self._sonarqube_projects_file.flush()
 
     def close(self) -> None:
         self._save_workbook()
@@ -120,10 +182,25 @@ class StreamingReportWriter:
             self._json_file.write("\n]\n")
             self._json_file.close()
             self._json_file = None
+        if self._scanner_targets_json_file:
+            self._scanner_targets_json_file.write("\n]\n")
+            self._scanner_targets_json_file.close()
+            self._scanner_targets_json_file = None
         if self._csv_file:
             self._csv_file.close()
             self._csv_file = None
+        if self._scanner_targets_csv_file:
+            self._scanner_targets_csv_file.close()
+            self._scanner_targets_csv_file = None
+        if self._semgrep_targets_file:
+            self._semgrep_targets_file.close()
+            self._semgrep_targets_file = None
+        if self._sonarqube_projects_file:
+            self._sonarqube_projects_file.close()
+            self._sonarqube_projects_file = None
         self._csv_writer = None
+        self._scanner_targets_writer = None
+        self._sonarqube_projects_writer = None
         if self._workbook:
             self._workbook.close()
             self._workbook = None
@@ -164,3 +241,22 @@ class StreamingReportWriter:
         for index, field_name in enumerate(CSV_FIELDNAMES, start=1):
             column_letter = get_column_letter(index)
             sheet.column_dimensions[column_letter].width = WORKBOOK_COLUMN_WIDTHS.get(field_name, 16)
+
+
+def scanner_target_row(result: dict[str, object]) -> dict[str, object]:
+    return {field_name: result.get(field_name, "") for field_name in SCANNER_TARGET_FIELDNAMES}
+
+
+def sonarqube_project_row(result: dict[str, object]) -> dict[str, object]:
+    return {
+        "sonar.projectKey": result.get("sonarqube_project_key", ""),
+        "sonar.projectName": result.get("sonarqube_project_name", ""),
+        "sonar.sources": ".",
+        "branch": result.get("branch_name", ""),
+        "source_url": result.get("source_url", ""),
+        "web_url": result.get("web_url", ""),
+        "project": result.get("project", ""),
+        "repo_name": result.get("repo_name", ""),
+        "inventory_types": result.get("inventory_types", ""),
+        "categories": result.get("categories", ""),
+    }

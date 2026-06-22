@@ -21,5 +21,5 @@ USER scanner
 VOLUME ["/reports"]
 EXPOSE 48731
 
-ENTRYPOINT ["appsec-scan-router-container"]
+ENTRYPOINT ["appsec-inventory-service-container"]
 CMD ["--help"]
