@@ -1,6 +1,6 @@
-# Mobile App Inventory Tracer
+# AppSec Scan Router
 
-Mobile App Inventory Tracer is a default-first Azure DevOps scanner that identifies mobile applications across large Git estates, extracts app metadata, captures contributor and activity signals, and writes Excel-ready inventory reports as the scan runs.
+AppSec Scan Router is a Python SDK, CLI, and Dockerized scanner for Azure DevOps mobile application inventory. It identifies mobile apps across large Git estates, extracts app metadata, captures contributor and activity signals, validates public app store listings when requested, and writes Excel-ready reports as the scan runs.
 
 It is designed for engineering, platform, security, and enterprise architecture teams that need a reliable inventory of mobile codebases without cloning every repository or depending on broad keyword search.
 
@@ -102,7 +102,13 @@ Google Play public lookup can confirm public listings, but it cannot see private
 - Network access to `dev.azure.com`
 - Optional network access to Apple and Google Play endpoints when `--store-lookup` is enabled
 
-### Local Setup
+### PyPI Install
+
+```bash
+python -m pip install appsec-scan-router
+```
+
+### Local Development Setup
 
 ```bash
 git clone https://github.com/h0p3sf4ll/mobile-app-inventory-tracer.git
@@ -124,25 +130,25 @@ export ADO_PAT="your-token-here"
 Scan every project in an Azure DevOps organization:
 
 ```bash
-mobile-app-inventory-tracer --org PepsiCoIT --out-dir reports
+appsec-scan-router --org PepsiCoIT --out-dir reports
 ```
 
 Scan one project:
 
 ```bash
-mobile-app-inventory-tracer --org PepsiCoIT --project "Go_To_Market" --out-dir reports
+appsec-scan-router --org PepsiCoIT --project "Go_To_Market" --out-dir reports
 ```
 
 Only include medium and high confidence matches:
 
 ```bash
-mobile-app-inventory-tracer --org PepsiCoIT --out-dir reports --min-confidence medium
+appsec-scan-router --org PepsiCoIT --out-dir reports --min-confidence medium
 ```
 
 Fast profile for very large organizations:
 
 ```bash
-mobile-app-inventory-tracer \
+appsec-scan-router \
   --org PepsiCoIT \
   --out-dir reports \
   --min-confidence medium \
@@ -155,19 +161,20 @@ mobile-app-inventory-tracer \
 Enable public store enrichment:
 
 ```bash
-mobile-app-inventory-tracer --org PepsiCoIT --out-dir reports --store-lookup --store-country US
+appsec-scan-router --org PepsiCoIT --out-dir reports --store-lookup --store-country US
 ```
 
-The legacy command remains available for compatibility:
+Legacy commands remain available for compatibility:
 
 ```bash
+mobile-app-inventory-tracer --org PepsiCoIT --out-dir reports
 ado-mobile-scanner --org PepsiCoIT --out-dir reports
 ```
 
 You can also run from source:
 
 ```bash
-python mobile_app_inventory_tracer.py --org PepsiCoIT --out-dir reports
+python -m appsec_scan_router --org PepsiCoIT --out-dir reports
 ```
 
 ## Docker
@@ -175,7 +182,7 @@ python mobile_app_inventory_tracer.py --org PepsiCoIT --out-dir reports
 Build the image:
 
 ```bash
-docker build -t mobile-app-inventory-tracer .
+docker build -t appsec-scan-router .
 ```
 
 Run a scan and write reports to a local directory:
@@ -185,7 +192,7 @@ mkdir -p reports
 docker run --rm \
   -e ADO_PAT="$ADO_PAT" \
   -v "$PWD/reports:/reports" \
-  mobile-app-inventory-tracer \
+  appsec-scan-router \
   --org PepsiCoIT \
   --out-dir /reports \
   --min-confidence medium
@@ -197,7 +204,7 @@ Run with public store enrichment:
 docker run --rm \
   -e ADO_PAT="$ADO_PAT" \
   -v "$PWD/reports:/reports" \
-  mobile-app-inventory-tracer \
+  appsec-scan-router \
   --org PepsiCoIT \
   --out-dir /reports \
   --store-lookup \
@@ -214,7 +221,7 @@ The container runs as a non-root `scanner` user and writes to `/reports`.
 | `--project` | No | all projects | Project name to scan |
 | `--pat` | No | `ADO_PAT` | Azure DevOps PAT; prefer the environment variable |
 | `--out-dir` | No | current directory | Output directory |
-| `--out-prefix` | No | `ado_mobile_repos` | Output filename prefix |
+| `--out-prefix` | No | `appsec_scan_router` | Output filename prefix |
 | `--max-workers` | No | `8` | Concurrent repository preparation tasks |
 | `--branch-workers` | No | `16` | Concurrent resolved-branch scans |
 | `--content-workers` | No | `16` | Concurrent selected-file fetches |
@@ -232,9 +239,9 @@ The container runs as a non-root `scanner` user and writes to `/reports`.
 
 The scanner creates output files as soon as the run starts and appends matching rows as resolved branches are detected:
 
-- `ado_mobile_repos.csv`
-- `ado_mobile_repos.json`
-- `ado_mobile_repos.xlsx`
+- `appsec_scan_router.csv`
+- `appsec_scan_router.json`
+- `appsec_scan_router.xlsx`
 
 The Excel workbook includes:
 
@@ -292,21 +299,21 @@ Store enrichment fields:
 
 Validation fields are always `TRUE` or `FALSE`. They are `FALSE` when lookup is disabled, the identifier is missing, the public listing is not found, or the lookup returns an error.
 
-## Library Usage
+## SDK Usage
 
-The scanner can be embedded in another Python application.
+The scanner can be embedded in another Python application through the `appsec_scan_router` SDK.
 
 ```python
 from pathlib import Path
 
-from mobile_scanner import ScanConfig, scan_to_reports
+from appsec_scan_router import ScanConfig, scan_to_reports
 
 config = ScanConfig(
     org="PepsiCoIT",
     pat="your-token-here",
     project=None,
     out_dir=Path("reports"),
-    out_prefix="ado_mobile_repos",
+    out_prefix="appsec_scan_router",
     max_workers=8,
     branch_workers=16,
     content_workers=16,
@@ -323,10 +330,19 @@ config = ScanConfig(
 results, csv_path, json_path, xlsx_path = scan_to_reports(config)
 ```
 
+Use the SDK facade when an object-oriented boundary is cleaner for your application:
+
+```python
+from appsec_scan_router import AppSecScanRouter
+
+router = AppSecScanRouter(config)
+results, csv_path, json_path, xlsx_path = router.scan_to_reports()
+```
+
 Use `scan(config)` to receive rows without writing reports:
 
 ```python
-from mobile_scanner import scan
+from appsec_scan_router import scan
 
 rows = scan(config)
 ```
@@ -334,7 +350,7 @@ rows = scan(config)
 Stream rows into another process:
 
 ```python
-from mobile_scanner import scan
+from appsec_scan_router import scan
 
 def handle_row(row):
     print(row["project"], row["repo_name"], row["branch_name"], row["mobile_identifier"])
@@ -342,12 +358,12 @@ def handle_row(row):
 rows = scan(config, on_result=handle_row)
 ```
 
+The legacy `mobile_scanner` and `ado_mobile_scanner` imports remain available as compatibility aliases, but new integrations should import `appsec_scan_router`.
+
 ## Project Layout
 
 ```text
-ado_mobile_scanner.py              Compatibility wrapper
-mobile_app_inventory_tracer.py     Source-run wrapper
-mobile_scanner/
+appsec_scan_router/
   activity.py                      Commit authors and last-updated extraction
   azure.py                         Azure DevOps REST client
   cli.py                           CLI argument parsing
@@ -359,6 +375,9 @@ mobile_scanner/
   scanner.py                       Scan orchestration
   store_lookup.py                  Optional public app store enrichment
   utils.py                         Parsing and cleanup helpers
+mobile_scanner/                    Compatibility import package
+ado_mobile_scanner.py              Compatibility wrapper
+mobile_app_inventory_tracer.py     Compatibility wrapper
 tests/                             Unit tests
 Dockerfile                         Container definition
 ```
@@ -380,7 +399,7 @@ Store metadata is not the same as source metadata. App Store and Google Play val
 Start with:
 
 ```bash
-mobile-app-inventory-tracer --org PepsiCoIT --out-dir reports --max-workers 8 --content-workers 16 --min-confidence medium
+appsec-scan-router --org PepsiCoIT --out-dir reports --max-workers 8 --content-workers 16 --min-confidence medium
 ```
 
 For very large organizations, the scanner uses three independent pools:
@@ -410,7 +429,7 @@ Store lookup is also performed only after detection. Leave `--store-lookup` off 
 
 ```bash
 python -m unittest discover -s tests
-python -m compileall ado_mobile_scanner.py mobile_app_inventory_tracer.py mobile_scanner tests
+python -m compileall ado_mobile_scanner.py mobile_app_inventory_tracer.py appsec_scan_router mobile_scanner tests
 ```
 
 ## Contributing
@@ -427,4 +446,4 @@ Please include tests for parser, detection, and reporting changes.
 
 ## License
 
-Mobile App Inventory Tracer is released under the MIT License. See [LICENSE](LICENSE).
+AppSec Scan Router is released under the MIT License. See [LICENSE](LICENSE).

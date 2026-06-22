@@ -1,4 +1,4 @@
-from mobile_scanner import *
+from appsec_scan_router import *
 
 
 if __name__ == "__main__":

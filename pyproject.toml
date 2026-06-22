@@ -3,14 +3,17 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "mobile-app-inventory-tracer"
+name = "appsec-scan-router"
 version = "1.0.0"
-description = "Branch-aware Azure DevOps mobile application inventory scanner with optional public store enrichment"
+description = "SDK and CLI for routing Azure DevOps mobile app inventory scans with optional public store validation"
 readme = "README.md"
 requires-python = ">=3.10"
-license = {file = "LICENSE"}
-authors = [{name = "Mobile App Inventory Tracer contributors"}]
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{name = "AppSec Scan Router contributors"}]
 keywords = [
+    "appsec",
+    "sdk",
     "azure-devops",
     "mobile",
     "inventory",
@@ -25,7 +28,6 @@ classifiers = [
     "Environment :: Console",
     "Intended Audience :: Developers",
     "Intended Audience :: Information Technology",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
@@ -42,9 +44,10 @@ Repository = "https://github.com/h0p3sf4ll/mobile-app-inventory-tracer"
 Issues = "https://github.com/h0p3sf4ll/mobile-app-inventory-tracer/issues"
 
 [project.scripts]
-mobile-app-inventory-tracer = "mobile_scanner.cli:main"
-ado-mobile-scanner = "mobile_scanner.cli:main"
+appsec-scan-router = "appsec_scan_router.cli:main"
+mobile-app-inventory-tracer = "appsec_scan_router.cli:main"
+ado-mobile-scanner = "appsec_scan_router.cli:main"
 
 [tool.setuptools]
-packages = ["mobile_scanner"]
+packages = ["appsec_scan_router", "mobile_scanner"]
 py-modules = ["ado_mobile_scanner", "mobile_app_inventory_tracer"]

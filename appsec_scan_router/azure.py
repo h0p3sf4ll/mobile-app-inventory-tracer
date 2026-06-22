@@ -18,7 +18,7 @@ except ImportError:
     Retry = None
 
 
-LOGGER = logging.getLogger("ado_mobile_scanner")
+LOGGER = logging.getLogger("appsec_scan_router")
 
 
 class AzureDevOpsClient:
@@ -31,7 +31,7 @@ class AzureDevOpsClient:
         self._headers = {
             "Authorization": self._auth_header_value(pat),
             "Accept": "application/json",
-            "User-Agent": "ado-mobile-scanner/1.0",
+            "User-Agent": "appsec-scan-router/1.0",
         }
         self._retry = Retry(
             total=5,

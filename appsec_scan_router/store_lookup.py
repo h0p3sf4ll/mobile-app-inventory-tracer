@@ -21,7 +21,7 @@ except ImportError:
     Retry = None
 
 
-LOGGER = logging.getLogger("ado_mobile_scanner")
+LOGGER = logging.getLogger("appsec_scan_router")
 
 APPLE_PLATFORM = "apple_app_store"
 GOOGLE_PLATFORM = "google_play"
@@ -61,7 +61,7 @@ class StoreLookupClient:
             session.headers.update(
                 {
                     "Accept": "application/json,text/html,application/xhtml+xml",
-                    "User-Agent": "ado-mobile-scanner/1.0",
+                    "User-Agent": "appsec-scan-router/1.0",
                 }
             )
             adapter = HTTPAdapter(max_retries=self._retry, pool_connections=8, pool_maxsize=8)

@@ -4,17 +4,20 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
-import ado_mobile_scanner as scanner
+import appsec_scan_router as scanner
+import ado_mobile_scanner
 import mobile_scanner
 from openpyxl import load_workbook
 
 
 class PublicApiTests(unittest.TestCase):
     def test_package_api_is_importable(self):
+        self.assertIs(scanner.ScanConfig, ado_mobile_scanner.ScanConfig)
         self.assertIs(scanner.ScanConfig, mobile_scanner.ScanConfig)
-        self.assertTrue(callable(mobile_scanner.scan))
-        self.assertTrue(callable(mobile_scanner.scan_to_reports))
-        self.assertTrue(callable(mobile_scanner.detect_mobile_repo))
+        self.assertTrue(callable(scanner.scan))
+        self.assertTrue(callable(scanner.scan_to_reports))
+        self.assertTrue(callable(scanner.detect_mobile_repo))
+        self.assertTrue(callable(scanner.AppSecScanRouter))
 
 
 class DetectionTests(unittest.TestCase):

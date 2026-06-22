@@ -21,7 +21,10 @@ from .scanner import scan_to_reports
 
 
 def parse_args(argv: list[str]) -> ScanConfig:
-    parser = argparse.ArgumentParser(description="Identify mobile-specific Azure DevOps default or fallback branches.")
+    parser = argparse.ArgumentParser(
+        prog="appsec-scan-router",
+        description="Identify mobile-specific Azure DevOps default or fallback branches.",
+    )
     parser.add_argument("--org", required=True, help="Azure DevOps organization name")
     parser.add_argument("--project", help="Optional project name. Omit to scan all projects.")
     parser.add_argument(
@@ -37,8 +40,8 @@ def parse_args(argv: list[str]) -> ScanConfig:
     )
     parser.add_argument(
         "--out-prefix",
-        default="ado_mobile_repos",
-        help="Output file prefix. Defaults to ado_mobile_repos.",
+        default="appsec_scan_router",
+        help="Output file prefix. Defaults to appsec_scan_router.",
     )
     parser.add_argument(
         "--max-workers",

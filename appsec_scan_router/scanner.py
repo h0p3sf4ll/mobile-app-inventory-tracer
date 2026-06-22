@@ -35,7 +35,7 @@ from .store_lookup import StoreLookupClient, store_columns
 from .utils import confidence_rank, should_fetch_content
 
 
-LOGGER = logging.getLogger("ado_mobile_scanner")
+LOGGER = logging.getLogger("appsec_scan_router")
 
 
 def scan_to_reports(config: ScanConfig) -> tuple[list[dict[str, Any]], Path, Path, Path]:
