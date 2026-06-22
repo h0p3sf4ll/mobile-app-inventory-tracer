@@ -465,6 +465,26 @@ class OutputTests(unittest.TestCase):
         self.assertEqual(scanner.branch_name_from_ref("refs/heads/release/1.0"), "release/1.0")
         self.assertEqual(scanner.branch_name_from_ref("main"), "main")
 
+    def test_default_branch_name_from_repo(self):
+        self.assertEqual(scanner.default_branch_name_from_repo({"defaultBranch": "refs/heads/master"}), "master")
+        self.assertEqual(scanner.default_branch_name_from_repo({"defaultBranch": "refs/heads/develop"}), "develop")
+        self.assertEqual(scanner.default_branch_name_from_repo({}), "")
+
+    def test_list_branch_targets_uses_only_default_branch(self):
+        target = scanner.RepoScanTarget(
+            project_name="Project",
+            repo={
+                "id": "repo-id",
+                "name": "Repo",
+                "defaultBranch": "refs/heads/release",
+            },
+        )
+
+        branch_targets = scanner.list_branch_targets(target)
+
+        self.assertEqual(len(branch_targets), 1)
+        self.assertEqual(branch_targets[0].branch_name, "release")
+
     def test_branch_age_bucket(self):
         now = datetime(2026, 6, 21, tzinfo=timezone.utc)
 

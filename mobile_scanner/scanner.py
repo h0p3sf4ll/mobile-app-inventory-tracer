@@ -14,7 +14,6 @@ from .constants import DEFAULT_ACTIVITY_MODE, KNOWN_CATEGORIES, active_sheet_nam
 from .detection import detect_mobile_repo
 from .metadata import extract_mobile_metadata
 from .models import (
-    AzureDevOpsError,
     BranchScanTarget,
     DetectionEvidence,
     MobileAppMetadata,
@@ -28,7 +27,6 @@ from .utils import confidence_rank, should_fetch_content
 
 
 LOGGER = logging.getLogger("ado_mobile_scanner")
-UNAVAILABLE_REPO_REASON = "This usually means the repo is empty, disabled, moved, or not readable by this PAT."
 
 
 def scan_to_reports(config: ScanConfig) -> tuple[list[dict[str, Any]], Path, Path, Path]:
@@ -49,7 +47,7 @@ def scan(
     store_client = create_store_client(config)
     try:
         targets = collect_targets(client, config.project)
-        LOGGER.info("Scanning %s repositories", len(targets))
+        LOGGER.info("Scanning default branches for %s repositories", len(targets))
 
         results: list[dict[str, Any]] = []
         repo_workers = max(1, min(config.max_workers, len(targets) or 1))
@@ -64,7 +62,6 @@ def scan(
         ):
             completed_branch_lists = iter_completed_branch_target_lists(
                 repo_executor=repo_executor,
-                client=client,
                 targets=targets,
                 max_in_flight=max(repo_workers * 4, repo_workers),
             )
@@ -76,7 +73,7 @@ def scan(
                 try:
                     branch_targets = future.result()
                 except Exception as exc:
-                    LOGGER.warning("Failed to list repo branches: %s", exc)
+                    LOGGER.warning("Failed to resolve repository default branch: %s", exc)
                     continue
 
                 for branch_target in branch_targets:
@@ -112,7 +109,7 @@ def scan(
 
                 if repo_index % 25 == 0:
                     LOGGER.info(
-                        "Progress: %s/%s repositories listed; %s/%s branches scanned",
+                        "Progress: %s/%s repositories prepared; %s/%s default branches scanned",
                         repo_index,
                         len(targets),
                         completed_branches,
@@ -127,10 +124,10 @@ def scan(
                     block=True,
                 )
                 if completed_branches % 100 == 0:
-                    LOGGER.info("Progress: %s/%s branches scanned", completed_branches, submitted_branches)
+                    LOGGER.info("Progress: %s/%s default branches scanned", completed_branches, submitted_branches)
 
         results.sort(key=row_sort_key)
-        LOGGER.info("Finished in %.1fs; found %s app branches", time.monotonic() - start, len(results))
+        LOGGER.info("Finished in %.1fs; found %s app default branches", time.monotonic() - start, len(results))
         return results
     finally:
         client.close()
@@ -214,7 +211,7 @@ def scan_repo(
     activity_mode: str = DEFAULT_ACTIVITY_MODE,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for branch_target in list_branch_targets(client, target):
+    for branch_target in list_branch_targets(target):
         try:
             row = scan_branch_target(
                 client=client,
@@ -241,7 +238,6 @@ def scan_repo(
 
 
 def list_branch_targets(
-    client: AzureDevOpsClient,
     target: RepoScanTarget,
 ) -> list[BranchScanTarget]:
     repo = target.repo
@@ -255,33 +251,18 @@ def list_branch_targets(
         LOGGER.info("Skipping disabled repo: %s/%s", target.project_name, repo_name)
         return []
 
-    try:
-        refs = client.list_branches(target.project_name, repo_id)
-    except AzureDevOpsError as exc:
-        if exc.status_code == 404:
-            LOGGER.info(
-                "Skipping repo whose branches are unavailable: %s/%s. %s",
-                target.project_name,
-                repo_name,
-                UNAVAILABLE_REPO_REASON,
-            )
-            return []
-        raise
+    branch_name = default_branch_name_from_repo(repo)
+    if not branch_name:
+        LOGGER.info("Skipping repo without a default branch: %s/%s", target.project_name, repo_name)
+        return []
 
-    branch_targets: list[BranchScanTarget] = []
-    for ref in refs:
-        branch_name = branch_name_from_ref(ref.get("name", ""))
-        if not branch_name:
-            continue
-        branch_targets.append(
-            BranchScanTarget(
-                project_name=target.project_name,
-                repo=repo,
-                branch_name=branch_name,
-            )
+    return [
+        BranchScanTarget(
+            project_name=target.project_name,
+            repo=repo,
+            branch_name=branch_name,
         )
-
-    return branch_targets
+    ]
 
 
 def scan_branch(
@@ -419,6 +400,10 @@ def branch_name_from_ref(ref_name: str) -> str:
     return ref_name
 
 
+def default_branch_name_from_repo(repo: dict[str, Any]) -> str:
+    return branch_name_from_ref(str(repo.get("defaultBranch") or ""))
+
+
 def branch_age_bucket(
     last_updated: str,
     branch_age_days: int,
@@ -526,7 +511,6 @@ def collect_targets(client: AzureDevOpsClient, project_name: str | None) -> list
 
 def iter_completed_branch_target_lists(
     repo_executor: ThreadPoolExecutor,
-    client: AzureDevOpsClient,
     targets: list[RepoScanTarget],
     max_in_flight: int,
 ) -> Iterable[tuple[int, Future[list[BranchScanTarget]]]]:
@@ -541,7 +525,7 @@ def iter_completed_branch_target_lists(
             target = next(target_iter)
         except StopIteration:
             return False
-        pending.add(repo_executor.submit(list_branch_targets, client, target))
+        pending.add(repo_executor.submit(list_branch_targets, target))
         submitted += 1
         return True
 

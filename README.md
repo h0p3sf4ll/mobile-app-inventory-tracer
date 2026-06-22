@@ -1,12 +1,12 @@
 # Mobile App Inventory Tracer
 
-Mobile App Inventory Tracer is a branch-aware Azure DevOps scanner that identifies mobile applications across large Git estates, extracts app metadata, captures contributor and activity signals, and writes Excel-ready inventory reports as the scan runs.
+Mobile App Inventory Tracer is a default-branch Azure DevOps scanner that identifies mobile applications across large Git estates, extracts app metadata, captures contributor and activity signals, and writes Excel-ready inventory reports as the scan runs.
 
 It is designed for engineering, platform, security, and enterprise architecture teams that need a reliable inventory of mobile codebases without cloning every repository or depending on broad keyword search.
 
 ## Highlights
 
-- Scans Azure DevOps projects, repositories, and every Git branch returned by refs
+- Scans Azure DevOps projects, repositories, and each repository's configured default branch
 - Detects Android, iOS, Flutter, React Native, Expo, Ionic, Capacitor, Cordova, Xamarin, and .NET MAUI signals
 - Parses structured manifests and project files instead of relying on naive keyword matching
 - Extracts app name, version, bundle/package identifier, source of identifier, contributors, and latest branch activity
@@ -18,7 +18,7 @@ It is designed for engineering, platform, security, and enterprise architecture 
 
 ## How It Works
 
-The scanner uses the Azure DevOps REST API to list projects, repositories, branches, tree items, selected file contents, and commit history. For each branch, it fetches only files that can provide strong mobile signals or metadata, such as:
+The scanner uses the Azure DevOps REST API to list projects, repositories, default-branch tree items, selected file contents, and commit history. For each repository, it scans the branch in Azure DevOps `defaultBranch`, such as `main`, `master`, `develop`, or another configured default. It fetches only files that can provide strong mobile signals or metadata, such as:
 
 - `AndroidManifest.xml`
 - `Info.plist`
@@ -39,7 +39,7 @@ The scanner uses the Azure DevOps REST API to list projects, repositories, branc
 - `config.xml`
 - Azure pipeline YAML files
 
-Detection is evidence-based. A repository branch is included when structured signals meet the configured confidence threshold. Generic `.csproj` files, generic `config.xml` files, and weak pipeline-only clues are not enough on their own to classify a branch as an app.
+Detection is evidence-based. A repository default branch is included when structured signals meet the configured confidence threshold. Generic `.csproj` files, generic `config.xml` files, and weak pipeline-only clues are not enough on their own to classify a repository as an app.
 
 ## What It Detects
 
@@ -82,7 +82,7 @@ When enabled:
 - Apple App Store lookup uses the detected bundle identifier against Apple public lookup data
 - Google Play lookup checks the public app details page by package identifier
 - Results are cached by identifier and platform during the scan
-- Lookup runs only after a branch has already been classified as mobile
+- Lookup runs only after a default branch has already been classified as mobile
 
 Google Play public lookup can confirm public listings, but it cannot see private/internal apps or Play Console-only listings. Authenticated Google Play Developer API support can be layered in separately for organizations that own the apps and can provide Android Publisher OAuth credentials.
 
@@ -208,10 +208,10 @@ The container runs as a non-root `scanner` user and writes to `/reports`.
 | `--pat` | No | `ADO_PAT` | Azure DevOps PAT; prefer the environment variable |
 | `--out-dir` | No | current directory | Output directory |
 | `--out-prefix` | No | `ado_mobile_repos` | Output filename prefix |
-| `--max-workers` | No | `8` | Concurrent repository branch-listing requests |
-| `--branch-workers` | No | `16` | Concurrent branch scans |
+| `--max-workers` | No | `8` | Concurrent repository preparation tasks |
+| `--branch-workers` | No | `16` | Concurrent default-branch scans |
 | `--content-workers` | No | `16` | Concurrent selected-file fetches |
-| `--max-commits-per-repo` | No | `0` | Commit history limit per matched branch; `0` means all available history |
+| `--max-commits-per-repo` | No | `0` | Commit history limit per matched default branch; `0` means all available history |
 | `--timeout` | No | `30` | Azure DevOps HTTP timeout in seconds |
 | `--min-confidence` | No | `low` | Minimum detection confidence: `low`, `medium`, or `high` |
 | `--branch-age-days` | No | `90` | Active/older worksheet cutoff |
@@ -223,7 +223,7 @@ The container runs as a non-root `scanner` user and writes to `/reports`.
 
 ## Outputs
 
-The scanner creates output files as soon as the run starts and appends matching rows as branches are detected:
+The scanner creates output files as soon as the run starts and appends matching rows as default branches are detected:
 
 - `ado_mobile_repos.csv`
 - `ado_mobile_repos.json`
@@ -231,8 +231,8 @@ The scanner creates output files as soon as the run starts and appends matching 
 
 The Excel workbook includes:
 
-- `Active 90d`: matched app branches changed within the active window
-- `Older 90d`: matched app branches with no changes inside the active window
+- `Active 90d`: matched app default branches changed within the active window
+- `Older 90d`: matched app default branches with no changes inside the active window
 
 If you change `--branch-age-days`, worksheet names change accordingly, such as `Active 60d` and `Older 60d`.
 
@@ -244,7 +244,7 @@ Core inventory fields:
 | --- | --- |
 | `project` | Azure DevOps project name |
 | `repo_name` | Repository name |
-| `branch_name` | Branch where the app was detected |
+| `branch_name` | Repository default branch where the app was detected |
 | `branch_last_updated` | Latest branch commit timestamp seen by the scanner |
 | `branch_age_bucket` | Active/older age bucket |
 | `web_url` | Azure DevOps repository URL |
@@ -342,7 +342,7 @@ mobile_scanner/
   azure.py                         Azure DevOps REST client
   cli.py                           CLI argument parsing
   constants.py                     Shared constants and report schema
-  detection.py                     Evidence-based mobile branch classification
+  detection.py                     Evidence-based mobile default-branch classification
   metadata.py                      App metadata extraction
   models.py                        Dataclasses and errors
   reports.py                       CSV, JSON, and Excel writers
@@ -357,7 +357,7 @@ Dockerfile                         Container definition
 
 `mobile_identifier` can be empty when an app identifier is generated outside the files available to the scanner. Common causes include CI/CD variables, private variable groups, build flavors, environment-specific files, secrets, or app catalog packaging steps.
 
-`mobile_name` can be empty when the display name is localized, generated, or declared only in native project files that are not present in the scanned branch.
+`mobile_name` can be empty when the display name is localized, generated, or declared only in native project files that are not present in the scanned default branch.
 
 `mobile_version` can be empty when versioning is generated by pipeline tasks, Gradle logic, Xcode build settings, or environment-specific files.
 
@@ -375,13 +375,13 @@ mobile-app-inventory-tracer --org PepsiCoIT --out-dir reports --max-workers 8 --
 
 For very large organizations, the scanner uses three independent pools:
 
-- `--max-workers` lists repository branches
-- `--branch-workers` scans branches after they are listed
+- `--max-workers` prepares repositories and resolves their default branches
+- `--branch-workers` scans default branches after they are prepared
 - `--content-workers` fetches selected manifest and configuration files
 
 Increase concurrency only if Azure DevOps responds quickly and throttling is not observed. Reduce it if you see `429`, timeout, or transient service errors.
 
-Contributor extraction happens only after a branch passes detection. Use `--max-commits-per-repo` if full commit history is too expensive for large estates.
+Contributor extraction happens only after a default branch passes detection. Use `--max-commits-per-repo` if full commit history is too expensive for large estates.
 
 Use `--activity-mode latest` for the fastest large-org inventory pass. It captures `last_updated` from the latest branch commit and leaves `contributing_developers` empty, avoiding full commit-history walks. Use `--activity-mode contributors` when the complete contributor column matters more than speed.
 
