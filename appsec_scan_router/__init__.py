@@ -167,6 +167,7 @@ from .ui import (
     build_scan_command,
     normalize_scan_config,
     redact_command,
+    scan_progress,
 )
 
 __all__ = [
@@ -309,6 +310,7 @@ __all__ = [
     "scan",
     "scan_branch",
     "scan_branch_target",
+    "scan_progress",
     "scan_repo",
     "scan_to_reports",
     "scanner_target_ref",

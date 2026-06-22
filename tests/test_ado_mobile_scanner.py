@@ -1,7 +1,7 @@
 import json
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -200,6 +200,31 @@ class UiServiceTests(unittest.TestCase):
         redacted = scanner.redact_command(command)
 
         self.assertEqual(redacted, ["appsec-scan-router", "--pat", "[redacted]", "--org", "FabrikamCloud"])
+
+    def test_scan_progress_estimates_from_progress_logs(self):
+        started_at = (datetime.now(timezone.utc) - timedelta(seconds=100)).isoformat()
+        progress = scanner.scan_progress(
+            [
+                "Scanning resolved default or fallback branches for 100 repositories",
+                "Progress: 50/100 repositories prepared; 25/50 resolved branches scanned",
+            ],
+            started_at,
+            "",
+            "running",
+        )
+
+        self.assertEqual(progress["percent"], 50)
+        self.assertEqual(progress["repositoriesPrepared"], 50)
+        self.assertEqual(progress["repositoriesTotal"], 100)
+        self.assertEqual(progress["branchesScanned"], 25)
+        self.assertEqual(progress["branchesTotal"], 50)
+        self.assertGreater(progress["etaSeconds"], 0)
+
+    def test_scan_progress_marks_success_complete(self):
+        progress = scanner.scan_progress([], "", datetime.now(timezone.utc).isoformat(), "succeeded")
+
+        self.assertEqual(progress["percent"], 100)
+        self.assertEqual(progress["etaSeconds"], 0)
 
 
 class DetectionTests(unittest.TestCase):

@@ -25,6 +25,12 @@ DEFAULT_UI_PORT = 48731
 MAX_LOG_LINES = 5000
 REPORT_EXTENSIONS = frozenset({".csv", ".json", ".xlsx", ".txt"})
 SCAN_STATUSES_DONE = frozenset({"succeeded", "failed", "stopped"})
+BRANCH_PROGRESS_PATTERN = re.compile(r"Progress: (?P<branches>\d+)/(?P<branch_total>\d+) resolved branches scanned")
+REPO_PROGRESS_PATTERN = re.compile(
+    r"Progress: (?P<repos>\d+)/(?P<repo_total>\d+) repositories prepared; "
+    r"(?P<branches>\d+)/(?P<branch_total>\d+) resolved branches scanned"
+)
+TARGET_COUNT_PATTERN = re.compile(r"Scanning resolved default or fallback branches for (?P<repo_total>\d+) repositories")
 
 
 @dataclass
@@ -129,6 +135,7 @@ class ScanRun:
                 "endedAt": self.ended_at,
                 "exitCode": self.exit_code,
                 "detectedCount": detected,
+                "progress": scan_progress(self.logs, self.started_at, self.ended_at, self.status),
                 "reportsDir": str(self.reports_dir),
                 "command": " ".join(self.display_command),
                 "reports": self.report_files(),
@@ -497,6 +504,106 @@ def scan_environment(config: dict[str, Any]) -> dict[str, str]:
     elif token:
         env["ADO_PAT"] = token
     return env
+
+
+def scan_progress(
+    logs: list[str],
+    started_at: str,
+    ended_at: str,
+    status: str,
+) -> dict[str, Any]:
+    repo_done = 0
+    repo_total = 0
+    branch_done = 0
+    branch_total = 0
+    for line in logs:
+        target_match = TARGET_COUNT_PATTERN.search(line)
+        if target_match:
+            repo_total = int(target_match.group("repo_total"))
+        repo_match = REPO_PROGRESS_PATTERN.search(line)
+        if repo_match:
+            repo_done = int(repo_match.group("repos"))
+            repo_total = int(repo_match.group("repo_total"))
+            branch_done = int(repo_match.group("branches"))
+            branch_total = int(repo_match.group("branch_total"))
+            continue
+        branch_match = BRANCH_PROGRESS_PATTERN.search(line)
+        if branch_match:
+            branch_done = int(branch_match.group("branches"))
+            branch_total = int(branch_match.group("branch_total"))
+
+    if status in SCAN_STATUSES_DONE:
+        return {
+            "percent": 100 if status == "succeeded" else progress_percent(repo_done, repo_total, branch_done, branch_total),
+            "etaSeconds": 0,
+            "repositoriesPrepared": repo_done,
+            "repositoriesTotal": repo_total,
+            "branchesScanned": branch_done,
+            "branchesTotal": branch_total,
+        }
+
+    percent = progress_percent(repo_done, repo_total, branch_done, branch_total)
+    return {
+        "percent": percent,
+        "etaSeconds": estimated_remaining_seconds(
+            started_at,
+            repo_done,
+            repo_total,
+            branch_done,
+            branch_total,
+        ),
+        "repositoriesPrepared": repo_done,
+        "repositoriesTotal": repo_total,
+        "branchesScanned": branch_done,
+        "branchesTotal": branch_total,
+    }
+
+
+def progress_percent(repo_done: int, repo_total: int, branch_done: int, branch_total: int) -> int:
+    if branch_total > 0:
+        return bounded_percent(branch_done, branch_total)
+    if repo_total > 0:
+        return bounded_percent(repo_done, repo_total)
+    return 0
+
+
+def bounded_percent(done: int, total: int) -> int:
+    if total <= 0:
+        return 0
+    return max(0, min(99, round((done / total) * 100)))
+
+
+def estimated_remaining_seconds(
+    started_at: str,
+    repo_done: int,
+    repo_total: int,
+    branch_done: int,
+    branch_total: int,
+) -> int | None:
+    started = parse_iso_datetime(started_at)
+    if started is None:
+        return None
+    elapsed = max(1, (datetime.now(timezone.utc) - started).total_seconds())
+    done = branch_done if branch_total > 0 else repo_done
+    total = branch_total if branch_total > 0 else repo_total
+    if done <= 0 or total <= 0 or done >= total:
+        return None
+    rate = done / elapsed
+    if rate <= 0:
+        return None
+    return max(1, round((total - done) / rate))
+
+
+def parse_iso_datetime(value: str) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 def default_ui_config(reports_root: Path) -> dict[str, Any]:

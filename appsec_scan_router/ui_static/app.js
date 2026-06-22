@@ -2,7 +2,7 @@ const form = document.querySelector("#scanForm");
 const startScanButton = document.querySelector("#startScan");
 const stopScanButton = document.querySelector("#stopScan");
 const refreshButton = document.querySelector("#refreshScans");
-const resetButton = document.querySelector("#resetForm");
+const resetDefaultsButton = document.querySelector("#resetDefaults");
 const toggleTokenButton = document.querySelector("#toggleToken");
 const copyCommandButton = document.querySelector("#copyCommand");
 const clearLogsButton = document.querySelector("#clearLogs");
@@ -10,6 +10,8 @@ const downloadLogsButton = document.querySelector("#downloadLogs");
 const activeStatus = document.querySelector("#activeStatus");
 const activeTitle = document.querySelector("#activeTitle");
 const detectedCount = document.querySelector("#detectedCount");
+const progressValue = document.querySelector("#progressValue");
+const etaValue = document.querySelector("#etaValue");
 const runtimeValue = document.querySelector("#runtimeValue");
 const commandLine = document.querySelector("#commandLine");
 const runList = document.querySelector("#runList");
@@ -26,6 +28,22 @@ const state = {
   eventSource: null,
   logs: [],
   timer: null,
+};
+
+const defaultValues = {
+  outPrefix: "appsec_inventory_service",
+  minConfidence: "medium",
+  activityMode: "latest",
+  branchAgeDays: "90",
+  maxWorkers: "8",
+  branchWorkers: "16",
+  contentWorkers: "16",
+  maxCommitsPerRepo: "0",
+  timeout: "30",
+  storeCountry: "US",
+  storeTimeout: "15",
+  storeLookup: false,
+  verbose: false,
 };
 
 const persistedFields = [
@@ -66,7 +84,7 @@ function bindEvents() {
   startScanButton.addEventListener("click", startScan);
   stopScanButton.addEventListener("click", stopScan);
   refreshButton.addEventListener("click", loadScans);
-  resetButton.addEventListener("click", resetForm);
+  resetDefaultsButton.addEventListener("click", resetDefaults);
   toggleTokenButton.addEventListener("click", toggleToken);
   copyCommandButton.addEventListener("click", copyCommand);
   clearLogsButton.addEventListener("click", () => {
@@ -221,6 +239,8 @@ function renderActiveScan() {
     activeStatus.className = "";
     activeTitle.textContent = "No scan selected";
     detectedCount.textContent = "0";
+    progressValue.textContent = "0%";
+    etaValue.textContent = "Not started";
     runtimeValue.textContent = "0s";
     commandLine.textContent = "appsec-inventory-service";
     copyCommandButton.disabled = true;
@@ -232,6 +252,8 @@ function renderActiveScan() {
   activeStatus.className = `status-${scan.status}`;
   activeTitle.textContent = `${scan.org || "Unknown"} · ${scan.target || "all"} · ${providerLabel(scan.provider)}`;
   detectedCount.textContent = String(scan.detectedCount || 0);
+  progressValue.textContent = scanProgress(scan);
+  etaValue.textContent = scanEta(scan);
   runtimeValue.textContent = scanRuntime(scan);
   commandLine.textContent = scan.command || "appsec-inventory-service";
   copyCommandButton.disabled = !scan.command;
@@ -301,18 +323,18 @@ function formPayload() {
     repo: provider === "github-enterprise" ? value(data, "repo") : "",
     baseUrl: provider === "github-enterprise" ? value(data, "baseUrl") : "",
     token: value(data, "token"),
-    outPrefix: value(data, "outPrefix") || "appsec_inventory_service",
-    minConfidence: value(data, "minConfidence") || "medium",
-    activityMode: value(data, "activityMode") || "latest",
-    branchAgeDays: numberValue(data, "branchAgeDays", 90),
-    maxWorkers: numberValue(data, "maxWorkers", 8),
-    branchWorkers: numberValue(data, "branchWorkers", 16),
-    contentWorkers: numberValue(data, "contentWorkers", 16),
-    maxCommitsPerRepo: numberValue(data, "maxCommitsPerRepo", 0),
-    timeout: numberValue(data, "timeout", 30),
+    outPrefix: value(data, "outPrefix") || defaultValues.outPrefix,
+    minConfidence: value(data, "minConfidence") || defaultValues.minConfidence,
+    activityMode: value(data, "activityMode") || defaultValues.activityMode,
+    branchAgeDays: numberValue(data, "branchAgeDays", Number(defaultValues.branchAgeDays)),
+    maxWorkers: numberValue(data, "maxWorkers", Number(defaultValues.maxWorkers)),
+    branchWorkers: numberValue(data, "branchWorkers", Number(defaultValues.branchWorkers)),
+    contentWorkers: numberValue(data, "contentWorkers", Number(defaultValues.contentWorkers)),
+    maxCommitsPerRepo: numberValue(data, "maxCommitsPerRepo", Number(defaultValues.maxCommitsPerRepo)),
+    timeout: numberValue(data, "timeout", Number(defaultValues.timeout)),
     storeLookup: data.has("storeLookup"),
-    storeCountry: value(data, "storeCountry") || "US",
-    storeTimeout: numberValue(data, "storeTimeout", 15),
+    storeCountry: value(data, "storeCountry") || defaultValues.storeCountry,
+    storeTimeout: numberValue(data, "storeTimeout", Number(defaultValues.storeTimeout)),
     verbose: data.has("verbose"),
   };
 }
@@ -332,6 +354,7 @@ function syncProviderFields() {
 
 function loadForm() {
   const saved = JSON.parse(localStorage.getItem("appsec-inventory-service-ui") || "{}");
+  applyDefaultValues();
   for (const name of persistedFields) {
     if (!(name in saved)) {
       continue;
@@ -365,11 +388,25 @@ function saveForm() {
   localStorage.setItem("appsec-inventory-service-ui", JSON.stringify(saved));
 }
 
-function resetForm() {
-  form.reset();
-  localStorage.removeItem("appsec-inventory-service-ui");
+function resetDefaults() {
+  applyDefaultValues();
   syncProviderFields();
-  notify("Form reset.");
+  saveForm();
+  notify("Scan defaults restored.");
+}
+
+function applyDefaultValues() {
+  for (const [name, defaultValue] of Object.entries(defaultValues)) {
+    const element = form.elements[name];
+    if (!element) {
+      continue;
+    }
+    if (element.type === "checkbox") {
+      element.checked = Boolean(defaultValue);
+    } else {
+      element.value = defaultValue;
+    }
+  }
 }
 
 function toggleToken() {
@@ -428,6 +465,53 @@ function scanRuntime(scan) {
   const minutes = Math.floor(total / 60);
   const seconds = total % 60;
   return minutes ? `${minutes}m ${seconds}s` : `${seconds}s`;
+}
+
+function scanProgress(scan) {
+  const progress = scan.progress || {};
+  if (scan.status === "succeeded") {
+    return "100%";
+  }
+  const percent = Number(progress.percent || 0);
+  if (!Number.isFinite(percent) || percent <= 0) {
+    return scan.status === "running" ? "Starting" : "0%";
+  }
+  return `${Math.max(0, Math.min(100, Math.round(percent)))}%`;
+}
+
+function scanEta(scan) {
+  if (scan.status === "succeeded") {
+    return "Done";
+  }
+  if (scan.status === "failed") {
+    return "Stopped";
+  }
+  if (scan.status === "stopped") {
+    return "Stopped";
+  }
+  if (scan.status !== "running") {
+    return "Not started";
+  }
+  const seconds = Number((scan.progress || {}).etaSeconds);
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return "Estimating";
+  }
+  return `About ${durationText(seconds)}`;
+}
+
+function durationText(totalSeconds) {
+  const total = Math.max(1, Math.round(totalSeconds));
+  if (total < 60) {
+    return `${total}s`;
+  }
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  if (minutes < 60) {
+    return seconds ? `${minutes}m ${seconds}s` : `${minutes}m`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return remainingMinutes ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
 }
 
 function providerLabel(provider) {

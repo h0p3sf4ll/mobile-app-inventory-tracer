@@ -166,7 +166,9 @@ appsec-inventory-service-ui --host 127.0.0.1 --port 48731 --reports-dir reports
 ```
 
 The UI includes provider selection, token entry, whole-organization scans, confidence controls, activity mode,
-branch age cutoff, worker tuning, store lookup, live logs, stop control, and report downloads.
+branch age cutoff, worker tuning, store lookup, live logs, stop control, and report downloads. Required and optional
+fields are labeled, scan defaults are shown inline, and the active scan panel shows live progress with an ETA once
+enough progress data exists.
 
 Preferred environment variables:
 

@@ -39,40 +39,63 @@
 
           <div class="field-grid">
             <label>
-              <span>Organization</span>
-              <input name="org" autocomplete="organization" required>
+              <span class="label-line">
+                <span>Organization</span>
+                <span class="field-badge required">Required</span>
+              </span>
+              <input name="org" autocomplete="organization" placeholder="FabrikamCloud" required>
             </label>
             <label class="provider-azure">
-              <span>Project</span>
-              <input name="project" placeholder="All projects">
+              <span class="label-line">
+                <span>Project</span>
+                <span class="field-badge optional">Optional</span>
+              </span>
+              <input name="project" placeholder="All projects if blank">
             </label>
             <label class="provider-github hidden">
-              <span>Repository</span>
-              <input name="repo" placeholder="All repositories">
+              <span class="label-line">
+                <span>Repository</span>
+                <span class="field-badge optional">Optional</span>
+              </span>
+              <input name="repo" placeholder="All repositories if blank">
             </label>
             <label class="provider-github hidden full">
-              <span>GitHub API URL</span>
+              <span class="label-line">
+                <span>GitHub API URL</span>
+                <span class="field-badge required">Required</span>
+              </span>
               <input name="baseUrl" placeholder="https://github.example.com/api/v3">
             </label>
             <div class="full secret-field">
-              <label for="scanToken">Token</label>
-              <input id="scanToken" name="token" type="password" autocomplete="off">
+              <label for="scanToken">
+                <span class="label-line">
+                  <span>Token</span>
+                  <span class="field-badge optional">Optional</span>
+                </span>
+              </label>
+              <input id="scanToken" name="token" type="password" autocomplete="off" placeholder="Uses environment token if blank">
               <button class="icon-button" id="toggleToken" type="button" title="Show token">Show</button>
             </div>
           </div>
 
           <div class="section-heading compact">
             <h2>Scan</h2>
-            <button class="ghost small" id="resetForm" type="button">Reset</button>
+            <button class="ghost small" id="resetDefaults" type="button">Reset defaults</button>
           </div>
 
           <div class="field-grid">
             <label>
-              <span>Output prefix</span>
+              <span class="label-line">
+                <span>Output prefix</span>
+                <span class="default-badge">Default: appsec_inventory_service</span>
+              </span>
               <input name="outPrefix" value="appsec_inventory_service">
             </label>
             <label>
-              <span>Confidence</span>
+              <span class="label-line">
+                <span>Confidence</span>
+                <span class="default-badge">Default: Medium</span>
+              </span>
               <select name="minConfidence">
                 <option value="low">Low</option>
                 <option value="medium" selected>Medium</option>
@@ -80,51 +103,84 @@
               </select>
             </label>
             <label>
-              <span>Activity</span>
+              <span class="label-line">
+                <span>Activity</span>
+                <span class="default-badge">Default: Latest</span>
+              </span>
               <select name="activityMode">
                 <option value="latest" selected>Latest</option>
                 <option value="contributors">Contributors</option>
               </select>
             </label>
             <label>
-              <span>Branch age days</span>
+              <span class="label-line">
+                <span>Branch age days</span>
+                <span class="default-badge">Default: 90</span>
+              </span>
               <input name="branchAgeDays" type="number" min="1" value="90">
             </label>
             <label>
-              <span>Repo workers</span>
+              <span class="label-line">
+                <span>Repo workers</span>
+                <span class="default-badge">Default: 8</span>
+              </span>
               <input name="maxWorkers" type="number" min="1" value="8">
             </label>
             <label>
-              <span>Branch workers</span>
+              <span class="label-line">
+                <span>Branch workers</span>
+                <span class="default-badge">Default: 16</span>
+              </span>
               <input name="branchWorkers" type="number" min="1" value="16">
             </label>
             <label>
-              <span>Content workers</span>
+              <span class="label-line">
+                <span>Content workers</span>
+                <span class="default-badge">Default: 16</span>
+              </span>
               <input name="contentWorkers" type="number" min="1" value="16">
             </label>
             <label>
-              <span>Commit limit</span>
+              <span class="label-line">
+                <span>Commit limit</span>
+                <span class="default-badge">Default: 0</span>
+              </span>
               <input name="maxCommitsPerRepo" type="number" min="0" value="0">
             </label>
             <label>
-              <span>Timeout</span>
+              <span class="label-line">
+                <span>Timeout</span>
+                <span class="default-badge">Default: 30</span>
+              </span>
               <input name="timeout" type="number" min="1" value="30">
             </label>
             <label>
-              <span>Store country</span>
+              <span class="label-line">
+                <span>Store country</span>
+                <span class="default-badge">Default: US</span>
+              </span>
               <input name="storeCountry" maxlength="2" value="US">
             </label>
             <label>
-              <span>Store timeout</span>
+              <span class="label-line">
+                <span>Store timeout</span>
+                <span class="default-badge">Default: 15</span>
+              </span>
               <input name="storeTimeout" type="number" min="1" value="15">
             </label>
             <label class="toggle-row">
               <input name="storeLookup" type="checkbox">
-              <span>Store lookup</span>
+              <span class="toggle-copy">
+                <span>Store lookup</span>
+                <small>Optional, default off</small>
+              </span>
             </label>
             <label class="toggle-row">
               <input name="verbose" type="checkbox">
-              <span>Verbose logs</span>
+              <span class="toggle-copy">
+                <span>Verbose logs</span>
+                <small>Optional, default off</small>
+              </span>
             </label>
           </div>
         </form>
@@ -139,6 +195,14 @@
               <div>
                 <span class="metric-label">Assets</span>
                 <strong id="detectedCount">0</strong>
+              </div>
+              <div>
+                <span class="metric-label">Progress</span>
+                <strong id="progressValue">0%</strong>
+              </div>
+              <div>
+                <span class="metric-label">ETA</span>
+                <strong id="etaValue">Not started</strong>
               </div>
               <div>
                 <span class="metric-label">Runtime</span>

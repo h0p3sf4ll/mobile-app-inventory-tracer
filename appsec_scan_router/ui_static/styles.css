@@ -254,6 +254,45 @@ label {
   font-weight: 700;
 }
 
+.label-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.label-line > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.field-badge,
+.default-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  border-radius: 999px;
+  padding: 0 8px;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.field-badge.required {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.field-badge.optional,
+.default-badge {
+  background: var(--surface-muted);
+  color: var(--muted);
+}
+
 .full {
   grid-column: 1 / -1;
 }
@@ -288,7 +327,7 @@ button:focus-visible {
   grid-template-columns: 18px 1fr;
   align-items: center;
   min-height: 42px;
-  padding: 0 12px;
+  padding: 8px 12px;
   background: var(--surface-muted);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -298,6 +337,17 @@ button:focus-visible {
   width: 16px;
   min-height: 16px;
   margin: 0;
+}
+
+.toggle-copy {
+  display: grid;
+  gap: 2px;
+}
+
+.toggle-copy small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .hidden {
@@ -342,7 +392,7 @@ button:focus-visible {
 
 .metric-row {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 18px;
 }
@@ -365,7 +415,7 @@ button:focus-visible {
 .metric-row strong {
   display: block;
   margin-top: 8px;
-  font-size: 24px;
+  font-size: clamp(18px, 1.55vw, 24px);
   line-height: 1.1;
 }
 
@@ -504,6 +554,11 @@ button:focus-visible {
   .work-grid {
     grid-template-columns: 1fr;
   }
+
+  .metric-row {
+    grid-template-columns: repeat(5, minmax(112px, 1fr));
+    overflow-x: auto;
+  }
 }
 
 @media (max-width: 720px) {
@@ -530,5 +585,14 @@ button:focus-visible {
   .field-grid,
   .metric-row {
     grid-template-columns: 1fr;
+  }
+
+  .label-line {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .metric-row {
+    overflow: visible;
   }
 }
