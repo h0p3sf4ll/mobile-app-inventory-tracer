@@ -1,12 +1,12 @@
 # Mobile App Inventory Tracer
 
-Mobile App Inventory Tracer is a default-branch Azure DevOps scanner that identifies mobile applications across large Git estates, extracts app metadata, captures contributor and activity signals, and writes Excel-ready inventory reports as the scan runs.
+Mobile App Inventory Tracer is a default-first Azure DevOps scanner that identifies mobile applications across large Git estates, extracts app metadata, captures contributor and activity signals, and writes Excel-ready inventory reports as the scan runs.
 
 It is designed for engineering, platform, security, and enterprise architecture teams that need a reliable inventory of mobile codebases without cloning every repository or depending on broad keyword search.
 
 ## Highlights
 
-- Scans Azure DevOps projects, repositories, and each repository's configured default branch
+- Scans each repository's configured default branch, with a controlled deploy-branch fallback when none is set
 - Detects Android, iOS, Flutter, React Native, Expo, Ionic, Capacitor, Cordova, Xamarin, and .NET MAUI signals
 - Parses structured manifests and project files instead of relying on naive keyword matching
 - Extracts app name, version, bundle/package identifier, source of identifier, contributors, and latest branch activity
@@ -18,7 +18,13 @@ It is designed for engineering, platform, security, and enterprise architecture 
 
 ## How It Works
 
-The scanner uses the Azure DevOps REST API to list projects, repositories, default-branch tree items, selected file contents, and commit history. For each repository, it scans the branch in Azure DevOps `defaultBranch`, such as `main`, `master`, `develop`, or another configured default. It fetches only files that can provide strong mobile signals or metadata, such as:
+The scanner uses the Azure DevOps REST API to list projects, repositories, default-branch tree items, selected file contents, and commit history. For each repository, it scans the branch in Azure DevOps `defaultBranch`, such as `main`, `master`, `develop`, or another configured default.
+
+If Azure DevOps does not report a default branch for a repository, the scanner resolves one fallback branch instead of scanning every branch. It first checks Azure DevOps build definitions for repository-linked branch settings and branch filters. If no pipeline-associated branch can be resolved, it selects the strongest deployment-like branch name from the repo refs, prioritizing names such as `production`, `prod`, `preprod`, `release`, `main`, `master`, `development`, `develop`, and `dev`.
+
+Azure DevOps does not provide a single universal "production branch" field across all repos and deployment models. Pipeline fallback is therefore best-effort and depends on build definitions being available to the PAT. Release pipelines, external deployment systems, and manually deployed branches may not be visible through the read-only Code APIs.
+
+It fetches only files that can provide strong mobile signals or metadata, such as:
 
 - `AndroidManifest.xml`
 - `Info.plist`
@@ -39,7 +45,7 @@ The scanner uses the Azure DevOps REST API to list projects, repositories, defau
 - `config.xml`
 - Azure pipeline YAML files
 
-Detection is evidence-based. A repository default branch is included when structured signals meet the configured confidence threshold. Generic `.csproj` files, generic `config.xml` files, and weak pipeline-only clues are not enough on their own to classify a repository as an app.
+Detection is evidence-based. A repository branch is included when structured signals meet the configured confidence threshold. Generic `.csproj` files, generic `config.xml` files, and weak pipeline-only clues are not enough on their own to classify a repository as an app.
 
 ## What It Detects
 
@@ -82,7 +88,7 @@ When enabled:
 - Apple App Store lookup uses the detected bundle identifier against Apple public lookup data
 - Google Play lookup checks the public app details page by package identifier
 - Results are cached by identifier and platform during the scan
-- Lookup runs only after a default branch has already been classified as mobile
+- Lookup runs only after a resolved branch has already been classified as mobile
 
 Google Play public lookup can confirm public listings, but it cannot see private/internal apps or Play Console-only listings. Authenticated Google Play Developer API support can be layered in separately for organizations that own the apps and can provide Android Publisher OAuth credentials.
 
@@ -92,6 +98,7 @@ Google Play public lookup can confirm public listings, but it cannot see private
 
 - Python 3.10 or newer
 - Azure DevOps PAT with read access to Projects and Code
+- Optional Azure DevOps Build read access for pipeline-associated fallback branches when a repo has no default branch
 - Network access to `dev.azure.com`
 - Optional network access to Apple and Google Play endpoints when `--store-lookup` is enabled
 
@@ -209,9 +216,9 @@ The container runs as a non-root `scanner` user and writes to `/reports`.
 | `--out-dir` | No | current directory | Output directory |
 | `--out-prefix` | No | `ado_mobile_repos` | Output filename prefix |
 | `--max-workers` | No | `8` | Concurrent repository preparation tasks |
-| `--branch-workers` | No | `16` | Concurrent default-branch scans |
+| `--branch-workers` | No | `16` | Concurrent resolved-branch scans |
 | `--content-workers` | No | `16` | Concurrent selected-file fetches |
-| `--max-commits-per-repo` | No | `0` | Commit history limit per matched default branch; `0` means all available history |
+| `--max-commits-per-repo` | No | `0` | Commit history limit per matched branch; `0` means all available history |
 | `--timeout` | No | `30` | Azure DevOps HTTP timeout in seconds |
 | `--min-confidence` | No | `low` | Minimum detection confidence: `low`, `medium`, or `high` |
 | `--branch-age-days` | No | `90` | Active/older worksheet cutoff |
@@ -223,7 +230,7 @@ The container runs as a non-root `scanner` user and writes to `/reports`.
 
 ## Outputs
 
-The scanner creates output files as soon as the run starts and appends matching rows as default branches are detected:
+The scanner creates output files as soon as the run starts and appends matching rows as resolved branches are detected:
 
 - `ado_mobile_repos.csv`
 - `ado_mobile_repos.json`
@@ -231,8 +238,8 @@ The scanner creates output files as soon as the run starts and appends matching 
 
 The Excel workbook includes:
 
-- `Active 90d`: matched app default branches changed within the active window
-- `Older 90d`: matched app default branches with no changes inside the active window
+- `Active 90d`: matched app branches changed within the active window
+- `Older 90d`: matched app branches with no changes inside the active window
 
 If you change `--branch-age-days`, worksheet names change accordingly, such as `Active 60d` and `Older 60d`.
 
@@ -244,7 +251,7 @@ Core inventory fields:
 | --- | --- |
 | `project` | Azure DevOps project name |
 | `repo_name` | Repository name |
-| `branch_name` | Repository default branch where the app was detected |
+| `branch_name` | Resolved repository branch where the app was detected |
 | `branch_last_updated` | Latest branch commit timestamp seen by the scanner |
 | `branch_age_bucket` | Active/older age bucket |
 | `web_url` | Azure DevOps repository URL |
@@ -266,21 +273,24 @@ Store enrichment fields:
 | Field | Description |
 | --- | --- |
 | `store_lookup_status` | Aggregate store lookup status |
+| `store_validation_passed` | `TRUE` when all requested store validations found a public listing |
 | `store_platforms` | Stores where a public listing was found |
 | `apple_app_store_name` | Public Apple App Store app name |
 | `apple_app_store_identifier` | Bundle identifier returned by Apple |
 | `apple_app_store_url` | Public Apple App Store URL |
 | `apple_app_store_version` | Public Apple App Store version |
 | `apple_app_store_last_updated` | Public Apple App Store release/update timestamp |
+| `apple_app_store_validation_passed` | `TRUE` when Apple lookup found a public listing |
 | `apple_app_store_lookup_status` | Apple lookup status |
 | `google_play_name` | Public Google Play app name |
 | `google_play_identifier` | Google Play package identifier checked |
 | `google_play_url` | Public Google Play URL |
 | `google_play_version` | Best-effort version from public page metadata |
 | `google_play_last_updated` | Best-effort update date from public page metadata |
+| `google_play_validation_passed` | `TRUE` when Google Play lookup found a public listing |
 | `google_play_lookup_status` | Google Play public-page lookup status |
 
-Store fields remain empty unless `--store-lookup` is enabled and a public listing is found.
+Validation fields are always `TRUE` or `FALSE`. They are `FALSE` when lookup is disabled, the identifier is missing, the public listing is not found, or the lookup returns an error.
 
 ## Library Usage
 
@@ -342,7 +352,7 @@ mobile_scanner/
   azure.py                         Azure DevOps REST client
   cli.py                           CLI argument parsing
   constants.py                     Shared constants and report schema
-  detection.py                     Evidence-based mobile default-branch classification
+  detection.py                     Evidence-based mobile branch classification
   metadata.py                      App metadata extraction
   models.py                        Dataclasses and errors
   reports.py                       CSV, JSON, and Excel writers
@@ -357,7 +367,7 @@ Dockerfile                         Container definition
 
 `mobile_identifier` can be empty when an app identifier is generated outside the files available to the scanner. Common causes include CI/CD variables, private variable groups, build flavors, environment-specific files, secrets, or app catalog packaging steps.
 
-`mobile_name` can be empty when the display name is localized, generated, or declared only in native project files that are not present in the scanned default branch.
+`mobile_name` can be empty when the display name is localized, generated, or declared only in native project files that are not present in the scanned branch.
 
 `mobile_version` can be empty when versioning is generated by pipeline tasks, Gradle logic, Xcode build settings, or environment-specific files.
 
@@ -375,13 +385,13 @@ mobile-app-inventory-tracer --org PepsiCoIT --out-dir reports --max-workers 8 --
 
 For very large organizations, the scanner uses three independent pools:
 
-- `--max-workers` prepares repositories and resolves their default branches
-- `--branch-workers` scans default branches after they are prepared
+- `--max-workers` prepares repositories and resolves default or fallback branches
+- `--branch-workers` scans resolved branches after they are prepared
 - `--content-workers` fetches selected manifest and configuration files
 
 Increase concurrency only if Azure DevOps responds quickly and throttling is not observed. Reduce it if you see `429`, timeout, or transient service errors.
 
-Contributor extraction happens only after a default branch passes detection. Use `--max-commits-per-repo` if full commit history is too expensive for large estates.
+Contributor extraction happens only after a resolved branch passes detection. Use `--max-commits-per-repo` if full commit history is too expensive for large estates.
 
 Use `--activity-mode latest` for the fastest large-org inventory pass. It captures `last_updated` from the latest branch commit and leaves `contributing_developers` empty, avoiding full commit-history walks. Use `--activity-mode contributors` when the complete contributor column matters more than speed.
 

@@ -10,6 +10,22 @@ DEFAULT_STORE_TIMEOUT_SECONDS = 15
 DEFAULT_ACTIVITY_MODE = "contributors"
 MISSING_REQUESTS_MESSAGE = "Missing dependency: requests. Install it with `python -m pip install -r requirements.txt`."
 
+FALLBACK_BRANCH_PRIORITY = (
+    ("production", 100),
+    ("prod", 100),
+    ("preproduction", 95),
+    ("preprod", 95),
+    ("pre-prod", 95),
+    ("release", 90),
+    ("staging", 85),
+    ("stage", 85),
+    ("main", 80),
+    ("master", 78),
+    ("development", 70),
+    ("develop", 70),
+    ("dev", 65),
+)
+
 
 def active_sheet_name(branch_age_days: int = DEFAULT_BRANCH_AGE_DAYS) -> str:
     return f"Active {branch_age_days}d"
@@ -37,18 +53,21 @@ CATEGORY_FIELDNAMES = tuple(f"category_{category}" for category in KNOWN_CATEGOR
 
 STORE_FIELDNAMES = (
     "store_lookup_status",
+    "store_validation_passed",
     "store_platforms",
     "apple_app_store_name",
     "apple_app_store_identifier",
     "apple_app_store_url",
     "apple_app_store_version",
     "apple_app_store_last_updated",
+    "apple_app_store_validation_passed",
     "apple_app_store_lookup_status",
     "google_play_name",
     "google_play_identifier",
     "google_play_url",
     "google_play_version",
     "google_play_last_updated",
+    "google_play_validation_passed",
     "google_play_lookup_status",
 )
 

@@ -280,6 +280,7 @@ def store_columns_from_listings(listings: Iterable[StoreListing]) -> dict[str, s
 
     columns = {
         "store_lookup_status": aggregate_store_status((apple, google)),
+        "store_validation_passed": store_validation_result((apple, google)),
         "store_platforms": "; ".join(found_platforms),
     }
     columns.update(listing_column_values(APPLE_PLATFORM, apple))
@@ -294,8 +295,22 @@ def listing_column_values(platform: str, listing: StoreListing) -> dict[str, str
         f"{platform}_url": listing.url,
         f"{platform}_version": listing.version,
         f"{platform}_last_updated": listing.last_updated,
+        f"{platform}_validation_passed": listing_validation_result(listing),
         f"{platform}_lookup_status": listing.status,
     }
+
+
+def store_validation_result(listings: Iterable[StoreListing]) -> str:
+    requested = [listing for listing in listings if listing.status != "not_requested"]
+    return boolean_text(bool(requested) and all(listing.status == "found" for listing in requested))
+
+
+def listing_validation_result(listing: StoreListing) -> str:
+    return boolean_text(listing.status == "found")
+
+
+def boolean_text(value: bool) -> str:
+    return "TRUE" if value else "FALSE"
 
 
 def aggregate_store_status(listings: Iterable[StoreListing]) -> str:

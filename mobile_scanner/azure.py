@@ -172,6 +172,32 @@ class AzureDevOpsClient:
             if not continuation:
                 return refs
 
+    def list_build_definitions_for_repo(self, project_name: str, repo_id: str) -> list[dict[str, Any]]:
+        definitions: list[dict[str, Any]] = []
+        continuation: str | None = None
+
+        while True:
+            params: dict[str, Any] = {
+                "repositoryId": repo_id,
+                "repositoryType": "TfsGit",
+                "includeAllProperties": "true",
+                "$top": 100,
+            }
+            if continuation:
+                params["continuationToken"] = continuation
+
+            response = self.session.get(
+                self._url(f"/{project_name}/_apis/build/definitions"),
+                params=self._with_api_version(params),
+                timeout=self.timeout_seconds,
+            )
+            self._raise_for_status(response)
+            definitions.extend(response.json().get("value", []))
+
+            continuation = response.headers.get("x-ms-continuationtoken")
+            if not continuation:
+                return definitions
+
     def list_repo_items(self, project_name: str, repo_id: str, branch_name: str | None = None) -> list[dict[str, Any]]:
         params = {
             "recursionLevel": "Full",

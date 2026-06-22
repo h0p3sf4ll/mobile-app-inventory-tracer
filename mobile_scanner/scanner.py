@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
+from collections import Counter
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, as_completed, wait
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -10,10 +12,17 @@ from typing import Any, Callable, Iterable
 
 from .activity import extract_repo_activity, parse_ado_datetime
 from .azure import AzureDevOpsClient
-from .constants import DEFAULT_ACTIVITY_MODE, KNOWN_CATEGORIES, active_sheet_name, older_sheet_name
+from .constants import (
+    DEFAULT_ACTIVITY_MODE,
+    FALLBACK_BRANCH_PRIORITY,
+    KNOWN_CATEGORIES,
+    active_sheet_name,
+    older_sheet_name,
+)
 from .detection import detect_mobile_repo
 from .metadata import extract_mobile_metadata
 from .models import (
+    AzureDevOpsError,
     BranchScanTarget,
     DetectionEvidence,
     MobileAppMetadata,
@@ -47,7 +56,7 @@ def scan(
     store_client = create_store_client(config)
     try:
         targets = collect_targets(client, config.project)
-        LOGGER.info("Scanning default branches for %s repositories", len(targets))
+        LOGGER.info("Scanning resolved default or fallback branches for %s repositories", len(targets))
 
         results: list[dict[str, Any]] = []
         repo_workers = max(1, min(config.max_workers, len(targets) or 1))
@@ -62,6 +71,7 @@ def scan(
         ):
             completed_branch_lists = iter_completed_branch_target_lists(
                 repo_executor=repo_executor,
+                client=client,
                 targets=targets,
                 max_in_flight=max(repo_workers * 4, repo_workers),
             )
@@ -73,7 +83,7 @@ def scan(
                 try:
                     branch_targets = future.result()
                 except Exception as exc:
-                    LOGGER.warning("Failed to resolve repository default branch: %s", exc)
+                    LOGGER.warning("Failed to resolve repository branch: %s", exc)
                     continue
 
                 for branch_target in branch_targets:
@@ -109,7 +119,7 @@ def scan(
 
                 if repo_index % 25 == 0:
                     LOGGER.info(
-                        "Progress: %s/%s repositories prepared; %s/%s default branches scanned",
+                        "Progress: %s/%s repositories prepared; %s/%s resolved branches scanned",
                         repo_index,
                         len(targets),
                         completed_branches,
@@ -124,10 +134,10 @@ def scan(
                     block=True,
                 )
                 if completed_branches % 100 == 0:
-                    LOGGER.info("Progress: %s/%s default branches scanned", completed_branches, submitted_branches)
+                    LOGGER.info("Progress: %s/%s resolved branches scanned", completed_branches, submitted_branches)
 
         results.sort(key=row_sort_key)
-        LOGGER.info("Finished in %.1fs; found %s app default branches", time.monotonic() - start, len(results))
+        LOGGER.info("Finished in %.1fs; found %s app branches", time.monotonic() - start, len(results))
         return results
     finally:
         client.close()
@@ -211,7 +221,7 @@ def scan_repo(
     activity_mode: str = DEFAULT_ACTIVITY_MODE,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for branch_target in list_branch_targets(target):
+    for branch_target in list_branch_targets(client, target):
         try:
             row = scan_branch_target(
                 client=client,
@@ -238,6 +248,7 @@ def scan_repo(
 
 
 def list_branch_targets(
+    client: AzureDevOpsClient,
     target: RepoScanTarget,
 ) -> list[BranchScanTarget]:
     repo = target.repo
@@ -253,7 +264,13 @@ def list_branch_targets(
 
     branch_name = default_branch_name_from_repo(repo)
     if not branch_name:
-        LOGGER.info("Skipping repo without a default branch: %s/%s", target.project_name, repo_name)
+        branch_name = fallback_branch_name(client, target)
+    if not branch_name:
+        LOGGER.info(
+            "Skipping repo without a scannable default or fallback branch: %s/%s",
+            target.project_name,
+            repo_name,
+        )
         return []
 
     return [
@@ -404,6 +421,184 @@ def default_branch_name_from_repo(repo: dict[str, Any]) -> str:
     return branch_name_from_ref(str(repo.get("defaultBranch") or ""))
 
 
+def fallback_branch_name(client: AzureDevOpsClient, target: RepoScanTarget) -> str:
+    repo = target.repo
+    repo_id = str(repo.get("id") or "")
+    repo_name = str(repo.get("name") or "")
+    try:
+        refs = client.list_branches(target.project_name, repo_id)
+    except AzureDevOpsError as exc:
+        LOGGER.info("Could not list fallback branches for %s/%s: %s", target.project_name, repo_name, exc)
+        return ""
+
+    branch_names = branch_names_from_refs(refs)
+    if not branch_names:
+        LOGGER.info("No fallback branches found for %s/%s", target.project_name, repo_name)
+        return ""
+
+    pipeline_branch = pipeline_fallback_branch_name(client, target, branch_names)
+    if pipeline_branch:
+        LOGGER.info(
+            "Using pipeline-associated fallback branch for %s/%s: %s",
+            target.project_name,
+            repo_name,
+            pipeline_branch,
+        )
+        return pipeline_branch
+
+    selected = select_fallback_branch_name(branch_names)
+    if selected:
+        LOGGER.info(
+            "Using deployment-name fallback branch for %s/%s: %s",
+            target.project_name,
+            repo_name,
+            selected,
+        )
+    return selected
+
+
+def pipeline_fallback_branch_name(
+    client: AzureDevOpsClient,
+    target: RepoScanTarget,
+    branch_names: list[str],
+) -> str:
+    repo = target.repo
+    repo_id = str(repo.get("id") or "")
+    repo_name = str(repo.get("name") or "")
+    try:
+        definitions = client.list_build_definitions_for_repo(target.project_name, repo_id)
+    except AzureDevOpsError as exc:
+        LOGGER.debug(
+            "Could not inspect build definitions for %s/%s: %s",
+            target.project_name,
+            repo_name,
+            exc,
+        )
+        return ""
+    return select_pipeline_branch_name(branch_names, branch_names_from_build_definitions(definitions))
+
+
+def branch_names_from_refs(refs: Iterable[dict[str, Any]]) -> list[str]:
+    names: list[str] = []
+    seen: set[str] = set()
+    for ref in refs:
+        name = branch_name_from_ref(str(ref.get("name") or ""))
+        key = name.lower()
+        if name and key not in seen:
+            names.append(name)
+            seen.add(key)
+    return names
+
+
+def branch_names_from_build_definitions(definitions: Iterable[dict[str, Any]]) -> list[str]:
+    names: list[str] = []
+    for definition in definitions:
+        repository = definition.get("repository") if isinstance(definition.get("repository"), dict) else {}
+        names.extend(extract_branch_values([repository.get("defaultBranch")]))
+        for trigger in definition.get("triggers") or []:
+            if not isinstance(trigger, dict):
+                continue
+            filters = trigger.get("branchFilters") or []
+            names.extend(extract_branch_values([filters] if isinstance(filters, str) else filters))
+    return [name for name in names if name]
+
+
+def extract_branch_values(values: Iterable[Any]) -> list[str]:
+    names: list[str] = []
+    for value in values:
+        raw_value = str(value or "").strip()
+        if not raw_value or raw_value.startswith("-") or "*" in raw_value:
+            continue
+        if raw_value.startswith("+"):
+            raw_value = raw_value[1:]
+        name = branch_name_from_ref(raw_value)
+        if name:
+            names.append(name)
+    return names
+
+
+def select_pipeline_branch_name(branch_names: list[str], pipeline_branch_names: Iterable[str]) -> str:
+    available = {branch.lower(): branch for branch in branch_names}
+    counts: Counter[str] = Counter()
+    for candidate in pipeline_branch_names:
+        branch_name = available.get(candidate.lower())
+        if branch_name:
+            counts[branch_name] += 1
+    if not counts:
+        return ""
+
+    ranked = sorted(
+        counts,
+        key=lambda branch: (
+            -branch_deployment_score(branch),
+            -counts[branch],
+            branch.count("/"),
+            len(branch),
+            branch.lower(),
+        ),
+    )
+    selected = ranked[0]
+    if branch_deployment_score(selected) or len(counts) == 1:
+        return selected
+    return ""
+
+
+def select_fallback_branch_name(branch_names: list[str]) -> str:
+    candidates = [branch for branch in branch_names if branch_deployment_score(branch)]
+    if not candidates:
+        return ""
+    return sorted(
+        candidates,
+        key=lambda branch: (
+            -branch_deployment_score(branch),
+            -int(is_direct_deployment_branch_name(branch)),
+            branch.count("/"),
+            len(branch),
+            branch.lower(),
+        ),
+    )[0]
+
+
+def branch_deployment_score(branch_name: str) -> int:
+    direct_keys, token_keys = branch_name_match_keys(branch_name)
+    for keyword, score in FALLBACK_BRANCH_PRIORITY:
+        if normalized_branch_key(keyword) in direct_keys:
+            return score
+    for keyword, score in FALLBACK_BRANCH_PRIORITY:
+        if normalized_branch_key(keyword) in token_keys:
+            return score
+    return 0
+
+
+def is_direct_deployment_branch_name(branch_name: str) -> bool:
+    direct_keys, _ = branch_name_match_keys(branch_name)
+    return any(
+        normalized_branch_key(keyword) in direct_keys
+        for keyword, _ in FALLBACK_BRANCH_PRIORITY
+    )
+
+
+def branch_name_match_keys(branch_name: str) -> tuple[set[str], set[str]]:
+    lowered = branch_name_from_ref(branch_name).strip().lower()
+    last_segment = lowered.rsplit("/", 1)[-1]
+    direct_keys = {
+        lowered,
+        last_segment,
+        normalized_branch_key(lowered),
+        normalized_branch_key(last_segment),
+    }
+    token_keys = {
+        normalized_branch_key(token)
+        for token in re.split(r"[^a-z0-9]+", lowered)
+        if token
+    }
+    return direct_keys, token_keys
+
+
+def normalized_branch_key(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", value.lower())
+
+
 def branch_age_bucket(
     last_updated: str,
     branch_age_days: int,
@@ -511,6 +706,7 @@ def collect_targets(client: AzureDevOpsClient, project_name: str | None) -> list
 
 def iter_completed_branch_target_lists(
     repo_executor: ThreadPoolExecutor,
+    client: AzureDevOpsClient,
     targets: list[RepoScanTarget],
     max_in_flight: int,
 ) -> Iterable[tuple[int, Future[list[BranchScanTarget]]]]:
@@ -525,7 +721,7 @@ def iter_completed_branch_target_lists(
             target = next(target_iter)
         except StopIteration:
             return False
-        pending.add(repo_executor.submit(list_branch_targets, target))
+        pending.add(repo_executor.submit(list_branch_targets, client, target))
         submitted += 1
         return True
 

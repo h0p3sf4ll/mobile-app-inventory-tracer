@@ -21,7 +21,7 @@ from .scanner import scan_to_reports
 
 
 def parse_args(argv: list[str]) -> ScanConfig:
-    parser = argparse.ArgumentParser(description="Identify mobile-specific Azure DevOps default branches.")
+    parser = argparse.ArgumentParser(description="Identify mobile-specific Azure DevOps default or fallback branches.")
     parser.add_argument("--org", required=True, help="Azure DevOps organization name")
     parser.add_argument("--project", help="Optional project name. Omit to scan all projects.")
     parser.add_argument(
@@ -50,14 +50,14 @@ def parse_args(argv: list[str]) -> ScanConfig:
         "--branch-workers",
         type=int,
         default=DEFAULT_BRANCH_WORKERS,
-        help=f"Maximum concurrent default-branch scans. Defaults to {DEFAULT_BRANCH_WORKERS}.",
+        help=f"Maximum concurrent resolved-branch scans. Defaults to {DEFAULT_BRANCH_WORKERS}.",
     )
     parser.add_argument(
         "--content-workers",
         type=int,
         default=DEFAULT_CONTENT_WORKERS,
         help=(
-            "Maximum concurrent config/manifest file fetches across repository default branches. "
+            "Maximum concurrent config/manifest file fetches across resolved repository branches. "
             f"Defaults to {DEFAULT_CONTENT_WORKERS}."
         ),
     )
@@ -66,7 +66,7 @@ def parse_args(argv: list[str]) -> ScanConfig:
         type=int,
         default=0,
         help=(
-            "Maximum commits to inspect per matched default branch for contributors. "
+            "Maximum commits to inspect per matched resolved branch for contributors. "
             "Use 0 for all available history. Defaults to 0."
         ),
     )
@@ -172,7 +172,7 @@ def configure_logging(verbose: bool) -> None:
 def main(argv: list[str] | None = None) -> int:
     config = parse_args(sys.argv[1:] if argv is None else argv)
     results, csv_path, json_path, xlsx_path = scan_to_reports(config)
-    print(f"Done. Found {len(results)} mobile-specific app default branches.")
+    print(f"Done. Found {len(results)} mobile-specific app branches.")
     print(f"CSV:  {csv_path}")
     print(f"JSON: {json_path}")
     print(f"XLSX: {xlsx_path}")

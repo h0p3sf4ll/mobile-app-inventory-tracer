@@ -382,6 +382,21 @@ class RepoActivityTests(unittest.TestCase):
 
 
 class OutputTests(unittest.TestCase):
+    class FakeBranchClient:
+        def __init__(self, refs=None, definitions=None):
+            self.refs = refs or []
+            self.definitions = definitions or []
+            self.branch_calls = 0
+            self.definition_calls = 0
+
+        def list_branches(self, project_name, repo_id):
+            self.branch_calls += 1
+            return self.refs
+
+        def list_build_definitions_for_repo(self, project_name, repo_id):
+            self.definition_calls += 1
+            return self.definitions
+
     def sample_result(self):
         return {
             "project": "Project",
@@ -471,6 +486,7 @@ class OutputTests(unittest.TestCase):
         self.assertEqual(scanner.default_branch_name_from_repo({}), "")
 
     def test_list_branch_targets_uses_only_default_branch(self):
+        client = self.FakeBranchClient()
         target = scanner.RepoScanTarget(
             project_name="Project",
             repo={
@@ -480,10 +496,71 @@ class OutputTests(unittest.TestCase):
             },
         )
 
-        branch_targets = scanner.list_branch_targets(target)
+        branch_targets = scanner.list_branch_targets(client, target)
 
         self.assertEqual(len(branch_targets), 1)
         self.assertEqual(branch_targets[0].branch_name, "release")
+        self.assertEqual(client.branch_calls, 0)
+
+    def test_select_fallback_branch_name_prefers_deployment_names(self):
+        self.assertEqual(
+            scanner.select_fallback_branch_name(["feature/foo", "main", "release/prod"]),
+            "release/prod",
+        )
+        self.assertEqual(
+            scanner.select_fallback_branch_name(["feature/foo", "development", "main"]),
+            "main",
+        )
+
+    def test_list_branch_targets_uses_pipeline_branch_when_default_missing(self):
+        client = self.FakeBranchClient(
+            refs=[
+                {"name": "refs/heads/main"},
+                {"name": "refs/heads/release/prod"},
+                {"name": "refs/heads/development"},
+            ],
+            definitions=[
+                {
+                    "repository": {"defaultBranch": "refs/heads/release/prod"},
+                    "triggers": [{"branchFilters": ["+refs/heads/release/prod"]}],
+                }
+            ],
+        )
+        target = scanner.RepoScanTarget(
+            project_name="Project",
+            repo={
+                "id": "repo-id",
+                "name": "Repo",
+            },
+        )
+
+        branch_targets = scanner.list_branch_targets(client, target)
+
+        self.assertEqual(len(branch_targets), 1)
+        self.assertEqual(branch_targets[0].branch_name, "release/prod")
+        self.assertEqual(client.branch_calls, 1)
+        self.assertEqual(client.definition_calls, 1)
+
+    def test_list_branch_targets_uses_keyword_branch_when_default_missing(self):
+        client = self.FakeBranchClient(
+            refs=[
+                {"name": "refs/heads/feature/foo"},
+                {"name": "refs/heads/development"},
+                {"name": "refs/heads/preprod"},
+            ]
+        )
+        target = scanner.RepoScanTarget(
+            project_name="Project",
+            repo={
+                "id": "repo-id",
+                "name": "Repo",
+            },
+        )
+
+        branch_targets = scanner.list_branch_targets(client, target)
+
+        self.assertEqual(len(branch_targets), 1)
+        self.assertEqual(branch_targets[0].branch_name, "preprod")
 
     def test_branch_age_bucket(self):
         now = datetime(2026, 6, 21, tzinfo=timezone.utc)
@@ -523,18 +600,43 @@ class StoreLookupTests(unittest.TestCase):
         )
 
         self.assertEqual(columns["store_lookup_status"], "partial_found")
+        self.assertEqual(columns["store_validation_passed"], "FALSE")
         self.assertEqual(columns["store_platforms"], "Apple App Store")
         self.assertEqual(columns["apple_app_store_name"], "Agsnap")
         self.assertEqual(columns["apple_app_store_identifier"], "com.pepsico.agsnap")
+        self.assertEqual(columns["apple_app_store_validation_passed"], "TRUE")
+        self.assertEqual(columns["google_play_validation_passed"], "FALSE")
         self.assertEqual(columns["google_play_lookup_status"], "not_found_publicly")
+
+    def test_store_validation_passes_when_all_requested_stores_are_found(self):
+        columns = scanner.store_columns_from_listings(
+            [
+                scanner.StoreListing(
+                    platform=scanner.APPLE_PLATFORM,
+                    status="found",
+                    identifier="com.pepsico.agsnap",
+                ),
+                scanner.StoreListing(
+                    platform=scanner.GOOGLE_PLATFORM,
+                    status="not_requested",
+                ),
+            ]
+        )
+
+        self.assertEqual(columns["store_validation_passed"], "TRUE")
+        self.assertEqual(columns["apple_app_store_validation_passed"], "TRUE")
+        self.assertEqual(columns["google_play_validation_passed"], "FALSE")
 
     def test_store_columns_disabled_and_identifier_missing(self):
         disabled = scanner.store_columns("com.pepsico.agsnap", ["android"], None)
         missing = scanner.store_columns("", ["ios"], object())
 
         self.assertEqual(disabled["store_lookup_status"], "disabled")
+        self.assertEqual(disabled["store_validation_passed"], "FALSE")
         self.assertEqual(disabled["google_play_lookup_status"], "disabled")
+        self.assertEqual(disabled["google_play_validation_passed"], "FALSE")
         self.assertEqual(missing["store_lookup_status"], "identifier_missing")
+        self.assertEqual(missing["store_validation_passed"], "FALSE")
         self.assertEqual(missing["apple_app_store_lookup_status"], "identifier_missing")
 
     def test_google_play_helpers(self):
