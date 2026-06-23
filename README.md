@@ -37,13 +37,27 @@ appsec-inventory-service-ui --help
 For local development:
 
 ```bash
-git clone https://github.com/h0p3sf4ll/mobile-app-inventory-tracer.git
-cd mobile-app-inventory-tracer
+git clone https://github.com/h0p3sf4ll/appsec-inventory-service.git
+cd appsec-inventory-service
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
 python -m pip install -e .
 ```
+
+## Publishing
+
+Releases publish to PyPI through GitHub Actions Trusted Publishing. Configure the PyPI project publisher with:
+
+| Field | Value |
+| --- | --- |
+| Repository owner | `h0p3sf4ll` |
+| Repository name | `appsec-inventory-service` |
+| Workflow filename | `publish.yml` |
+| Environment name | `pypi` |
+
+Create the `pypi` environment under GitHub repository settings before publishing. Required reviewers are strongly
+recommended for that environment so package publishing is separated from ordinary commit access.
 
 ## Azure DevOps
 
