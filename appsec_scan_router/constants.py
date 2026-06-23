@@ -55,6 +55,12 @@ KNOWN_CATEGORIES = (
     "serverless",
     "containerized_service",
     "infrastructure_as_code",
+    "ai_enabled",
+    "llm_integration",
+    "ai_orchestration",
+    "ml_inference",
+    "vector_search",
+    "ai_service_integration",
 )
 
 CATEGORY_FIELDNAMES = tuple(f"category_{category}" for category in KNOWN_CATEGORIES)
@@ -68,6 +74,7 @@ KNOWN_INVENTORY_TYPES = (
     "serverless",
     "library",
     "infrastructure",
+    "ai_enabled",
 )
 
 TYPE_FIELDNAMES = tuple(f"type_{inventory_type}" for inventory_type in KNOWN_INVENTORY_TYPES)
@@ -106,6 +113,13 @@ CONTENT_FILES_TO_FETCH: tuple[str, ...] = (
     "requirements.txt",
     "Pipfile",
     "poetry.lock",
+    "requirements.in",
+    "requirements-dev.txt",
+    "requirements-prod.txt",
+    "setup.cfg",
+    "setup.py",
+    "environment.yml",
+    "environment.yaml",
     "pom.xml",
     "go.mod",
     "Cargo.toml",

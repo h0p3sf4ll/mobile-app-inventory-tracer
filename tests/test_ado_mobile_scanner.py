@@ -337,6 +337,101 @@ dependencies = ["celery", "confluent-kafka"]
         self.assertGreaterEqual(score, 3)
         self.assertIn("middleware", categories)
 
+    def test_detects_node_llm_inventory_repo(self):
+        confidence, evidence, score = scanner.detect_inventory_repo(
+            ["/package.json"],
+            {
+                "/package.json": json.dumps(
+                    {
+                        "name": "support-copilot",
+                        "version": "1.7.0",
+                        "dependencies": {
+                            "@anthropic-ai/sdk": "0.56.0",
+                            "@langchain/openai": "0.5.0",
+                            "@pinecone-database/pinecone": "5.1.0",
+                        },
+                    }
+                )
+            },
+        )
+
+        categories = {item.category for item in evidence}
+        self.assertEqual(confidence, "high")
+        self.assertGreaterEqual(score, 8)
+        self.assertIn("ai_enabled", categories)
+        self.assertIn("llm_integration", categories)
+        self.assertIn("ai_orchestration", categories)
+        self.assertIn("vector_search", categories)
+
+    def test_detects_python_ai_inventory_repo(self):
+        confidence, evidence, score = scanner.detect_inventory_repo(
+            ["/pyproject.toml"],
+            {
+                "/pyproject.toml": """\
+[project]
+name = "claims-ai"
+version = "0.3.0"
+dependencies = ["openai", "langchain-openai", "chromadb", "sentence-transformers"]
+"""
+            },
+        )
+
+        categories = {item.category for item in evidence}
+        self.assertEqual(confidence, "high")
+        self.assertGreaterEqual(score, 8)
+        self.assertIn("ai_enabled", categories)
+        self.assertIn("llm_integration", categories)
+        self.assertIn("ai_orchestration", categories)
+        self.assertIn("ml_inference", categories)
+        self.assertIn("vector_search", categories)
+
+    def test_detects_dotnet_ai_inventory_repo(self):
+        confidence, evidence, score = scanner.detect_inventory_repo(
+            ["/Assistant.csproj"],
+            {
+                "/Assistant.csproj": """\
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <ItemGroup>
+    <PackageReference Include="Azure.AI.OpenAI" Version="2.1.0" />
+    <PackageReference Include="Microsoft.SemanticKernel" Version="1.55.0" />
+  </ItemGroup>
+</Project>
+"""
+            },
+        )
+
+        categories = {item.category for item in evidence}
+        self.assertEqual(confidence, "high")
+        self.assertGreaterEqual(score, 8)
+        self.assertIn("web_backend", categories)
+        self.assertIn("api_service", categories)
+        self.assertIn("ai_enabled", categories)
+        self.assertIn("llm_integration", categories)
+        self.assertIn("ai_orchestration", categories)
+
+    def test_detects_ai_runtime_configuration(self):
+        confidence, evidence, score = scanner.detect_inventory_repo(
+            ["/src/main/resources/application.yml"],
+            {
+                "/src/main/resources/application.yml": """\
+spring:
+  application:
+    name: assistant-api
+  ai:
+    openai:
+      chat:
+        options:
+          model: gpt-4.1-mini
+"""
+            },
+        )
+
+        categories = {item.category for item in evidence}
+        self.assertEqual(confidence, "medium")
+        self.assertGreaterEqual(score, 3)
+        self.assertIn("ai_enabled", categories)
+        self.assertIn("llm_integration", categories)
+
     def test_generic_config_xml_is_not_mobile(self):
         confidence, evidence, score = scanner.detect_mobile_repo(
             ["/config.xml"],
@@ -764,23 +859,25 @@ class OutputTests(unittest.TestCase):
             self.assertEqual(workbook_value(workbook[scanner.ACTIVE_SHEET_NAME], "mobile_name", 2), "Agsnap")
 
     def test_category_columns_are_excel_filter_friendly(self):
-        columns = scanner.category_columns(["android", "react_native"])
+        columns = scanner.category_columns(["android", "react_native", "ai_enabled"])
 
         self.assertEqual(columns["category_android"], "TRUE")
         self.assertEqual(columns["category_react_native"], "TRUE")
+        self.assertEqual(columns["category_ai_enabled"], "TRUE")
         self.assertEqual(columns["category_ios"], "FALSE")
 
     def test_type_columns_are_excel_filter_friendly(self):
-        columns = scanner.type_columns(["web_app", "microservice"])
+        columns = scanner.type_columns(["web_app", "microservice", "ai_enabled"])
 
         self.assertEqual(columns["type_web_app"], "TRUE")
         self.assertEqual(columns["type_microservice"], "TRUE")
+        self.assertEqual(columns["type_ai_enabled"], "TRUE")
         self.assertEqual(columns["type_mobile_app"], "FALSE")
 
     def test_inventory_types_from_categories(self):
         self.assertEqual(
-            scanner.inventory_types_from_categories(["web_backend", "api_service", "middleware"]),
-            ["web_app", "api_service", "middleware"],
+            scanner.inventory_types_from_categories(["web_backend", "api_service", "middleware", "llm_integration"]),
+            ["web_app", "api_service", "middleware", "ai_enabled"],
         )
 
     def test_identifier_status(self):

@@ -2,8 +2,8 @@
 
 AppSec Inventory Service builds an application inventory from Azure DevOps and GitHub Enterprise without cloning
 repositories. It discovers mobile apps, web applications, API services, microservices, serverless workloads,
-containerized services, and middleware-oriented workers from structured source evidence, then streams reports and
-scanner target manifests as the scan runs.
+containerized services, middleware-oriented workers, and AI-enabled applications from structured source evidence,
+then streams reports and scanner target manifests as the scan runs.
 
 The project is published on PyPI as `appsec-scan-router` for package continuity. The primary commands are now
 `appsec-inventory-service` and `appsec-inventory-service-ui`; older command names remain available as compatibility
@@ -16,6 +16,7 @@ aliases.
 - Scans one resolved branch per repository: default branch first, then deployment or production-like fallback branches
 - Detects Android, iOS, Flutter, React Native, Expo, Ionic, Capacitor, Cordova, Xamarin, and .NET MAUI
 - Detects web frontends, web backends, API services, microservices, middleware workers, serverless apps, containers, and deployment descriptors
+- Detects AI-enabled applications using LLM SDKs, AI orchestration frameworks, ML inference libraries, vector stores, and cloud AI services
 - Extracts inventory name, version, language, categories, mobile bundle/package identifiers, contributors, and last activity
 - Splits Excel output into active and older worksheets based on the configured branch age window
 - Optionally validates public Apple App Store and Google Play listings from detected mobile identifiers
@@ -203,9 +204,28 @@ including:
   `requirements.txt`, `Pipfile`, `go.mod`, `Cargo.toml`, `composer.json`, and `Gemfile`
 - Runtime and deployment descriptors: `Dockerfile`, Compose files, Helm charts, Kustomize files, Serverless files,
   Spring application config, Terraform `main.tf`, and Azure pipeline YAML
+- AI indicators: OpenAI, Azure AI, Anthropic, Gemini, Bedrock, LangChain, LlamaIndex, Semantic Kernel, Spring AI,
+  TensorFlow, PyTorch, ONNX Runtime, Hugging Face, Pinecone, Chroma, Qdrant, Weaviate, and related structured
+  dependency or runtime configuration signals
 
 Weak indicators are not enough on their own. A generic `.csproj`, a generic `config.xml`, or a standalone Dockerfile
 will not be treated as a strong application match without supporting framework, manifest, or dependency evidence.
+
+## AI Inventory Signals
+
+AI-enabled assets are returned with `type_ai_enabled=TRUE`. More specific filter columns explain why the asset was
+classified:
+
+| Column | Meaning |
+| --- | --- |
+| `category_llm_integration` | Uses an LLM or generative AI SDK |
+| `category_ai_orchestration` | Uses an agent or AI orchestration framework |
+| `category_ml_inference` | Uses local or hosted model inference libraries |
+| `category_vector_search` | Uses vector storage or retrieval dependencies |
+| `category_ai_service_integration` | Uses cloud AI APIs such as vision, document intelligence, speech, or language services |
+
+The scanner does not treat README mentions or arbitrary prose as AI evidence. It relies on package manifests,
+project files, container descriptors, and runtime configuration that are already part of the allow-listed scan set.
 
 ## Mobile Metadata And Store Validation
 

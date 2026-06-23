@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import Iterable
+from typing import Callable, Iterable
 
 from .metadata import (
     collect_metadata_properties,
@@ -24,6 +24,268 @@ from .utils import (
     regex_value,
     xml_text,
     yaml_has_flutter_dependency,
+)
+
+AI_LLM_DEPENDENCIES = frozenset(
+    {
+        "@ai-sdk/anthropic",
+        "@ai-sdk/azure",
+        "@ai-sdk/cohere",
+        "@ai-sdk/google",
+        "@ai-sdk/mistral",
+        "@ai-sdk/openai",
+        "@anthropic-ai/sdk",
+        "@aws-sdk/client-bedrock-runtime",
+        "@azure/ai-inference",
+        "@azure/ai-openai",
+        "@azure/ai-projects",
+        "@azure/openai",
+        "@google/generative-ai",
+        "@google/genai",
+        "@google-cloud/vertexai",
+        "@huggingface/inference",
+        "@mistralai/mistralai",
+        "anthropic",
+        "azure-ai-inference",
+        "azure-ai-openai",
+        "azure-ai-projects",
+        "azure.ai.inference",
+        "azure.ai.openai",
+        "awssdk.bedrockruntime",
+        "bedrockruntime",
+        "cloud.google.com/go/vertexai/genai",
+        "cohere",
+        "cohere-ai",
+        "cohere-ai/cohere-go",
+        "dev.langchain4j",
+        "github.com/aws/aws-sdk-go-v2/service/bedrockruntime",
+        "github.com/cohere-ai/cohere-go",
+        "github.com/google/generative-ai-go",
+        "github.com/ollama/ollama/api",
+        "github.com/sashabaranov/go-openai",
+        "github.com/tmc/langchaingo",
+        "google-ai-generativelanguage",
+        "google-cloud-vertexai",
+        "google.ai.generativelanguage",
+        "google-genai",
+        "google-generativeai",
+        "google.cloud.vertexai",
+        "groq",
+        "groq-sdk",
+        "langchain4j-open-ai",
+        "langchain4j-open-ai-spring-boot-starter",
+        "mistralai",
+        "mistralai/mistralai",
+        "microsoft.semantickernel.connectors.azureopenai",
+        "microsoft.semantickernel.connectors.openai",
+        "ollama",
+        "ollamasharp",
+        "openai",
+        "openai-java",
+        "replicate",
+        "software.amazon.awssdk:bedrockruntime",
+        "spring-ai-anthropic-spring-boot-starter",
+        "spring-ai-azure-openai-spring-boot-starter",
+        "spring-ai-bedrock",
+        "spring-ai-bedrock-ai-spring-boot-starter",
+        "spring-ai-openai",
+        "spring-ai-openai-spring-boot-starter",
+        "spring-ai-starter-model-anthropic",
+        "spring-ai-starter-model-azure-openai",
+        "spring-ai-starter-model-bedrock",
+        "spring-ai-starter-model-openai",
+    }
+)
+
+AI_ORCHESTRATION_DEPENDENCIES = frozenset(
+    {
+        "@langchain/anthropic",
+        "@langchain/community",
+        "@langchain/core",
+        "@langchain/google-genai",
+        "@langchain/openai",
+        "autogen-core",
+        "autogen-agentchat",
+        "crewai",
+        "dev.langchain4j",
+        "haystack-ai",
+        "langchain",
+        "langchain-core",
+        "langchain-openai",
+        "langchain4j",
+        "llama-index",
+        "llamaindex",
+        "microsoft.semantickernel.agents.core",
+        "microsoft.semantickernel",
+        "pyautogen",
+        "semantic-kernel",
+        "spring-ai",
+    }
+)
+
+AI_ML_INFERENCE_DEPENDENCIES = frozenset(
+    {
+        "@tensorflow/tfjs",
+        "@xenova/transformers",
+        "deeplearning4j",
+        "diffusers",
+        "keras",
+        "lightgbm",
+        "microsoft.ml",
+        "microsoft.ml.onnxruntime",
+        "microsoft.ml.onnxruntimegenai",
+        "ml5",
+        "mlflow",
+        "onnxruntime",
+        "onnxruntime-node",
+        "onnxruntime-web",
+        "org.deeplearning4j",
+        "org.tensorflow",
+        "pytorch",
+        "scikit-learn",
+        "sentence-transformers",
+        "tensorflow",
+        "tensorflow-macos",
+        "tensorflow.net",
+        "torch",
+        "transformers",
+        "transformers.js",
+        "tribuo",
+        "weka",
+        "xgboost",
+    }
+)
+
+AI_VECTOR_SEARCH_DEPENDENCIES = frozenset(
+    {
+        "@pinecone-database/pinecone",
+        "@qdrant/js-client-rest",
+        "chromadb",
+        "dev.langchain4j:langchain4j-pinecone",
+        "faiss-cpu",
+        "faiss-gpu",
+        "faiss-node",
+        "github.com/pinecone-io/go-pinecone",
+        "github.com/qdrant/go-client",
+        "github.com/weaviate/weaviate-go-client",
+        "io.pinecone",
+        "lancedb",
+        "pgvector",
+        "pinecone",
+        "pinecone-client",
+        "qdrant-client",
+        "qdrant.client",
+        "redisvl",
+        "spring-ai-pinecone-store-spring-boot-starter",
+        "spring-ai-starter-vector-store-chroma",
+        "spring-ai-starter-vector-store-pgvector",
+        "spring-ai-starter-vector-store-pinecone",
+        "spring-ai-starter-vector-store-qdrant",
+        "spring-ai-starter-vector-store-redis",
+        "spring-ai-starter-vector-store-weaviate",
+        "weaviate-client",
+        "weaviate-ts-client",
+    }
+)
+
+AI_SERVICE_DEPENDENCIES = frozenset(
+    {
+        "@aws-sdk/client-comprehend",
+        "@aws-sdk/client-rekognition",
+        "@aws-sdk/client-sagemaker-runtime",
+        "@aws-sdk/client-textract",
+        "@azure/ai-document-intelligence",
+        "@azure/ai-form-recognizer",
+        "@azure/ai-language-text",
+        "@azure/ai-text-analytics",
+        "@azure/ai-vision-image-analysis",
+        "@azure/cognitiveservices-computervision",
+        "@google-cloud/aiplatform",
+        "@google-cloud/documentai",
+        "@google-cloud/language",
+        "@google-cloud/speech",
+        "@google-cloud/translate",
+        "@google-cloud/vision",
+        "amazon-textract-textractor",
+        "awssdk.comprehend",
+        "awssdk.rekognition",
+        "awssdk.sagemakerruntime",
+        "awssdk.textract",
+        "comprehend",
+        "azure-ai-documentintelligence",
+        "azure-ai-formrecognizer",
+        "azure-ai-textanalytics",
+        "azure-ai-vision-imageanalysis",
+        "azure.ai.documentintelligence",
+        "azure.ai.formrecognizer",
+        "azure.ai.language.conversations",
+        "azure.ai.textanalytics",
+        "azure.ai.vision.imageanalysis",
+        "azure-cognitiveservices-vision-computervision",
+        "cloud.google.com/go/ai",
+        "cloud.google.com/go/documentai",
+        "cloud.google.com/go/speech",
+        "cloud.google.com/go/translate",
+        "cloud.google.com/go/vision",
+        "documentai",
+        "google-cloud-aiplatform",
+        "google-cloud-documentai",
+        "google-cloud-language",
+        "google-cloud-speech",
+        "google-cloud-translate",
+        "google-cloud-vision",
+        "google.cloud.documentai",
+        "google.cloud.speech",
+        "google.cloud.translate",
+        "google.cloud.vision",
+        "huggingface-hub",
+        "huggingface_hub",
+        "rekognition",
+        "sagemakerruntime",
+        "software.amazon.awssdk:comprehend",
+        "software.amazon.awssdk:rekognition",
+        "software.amazon.awssdk:sagemakerruntime",
+        "software.amazon.awssdk:textract",
+        "textract",
+    }
+)
+
+AI_DEPENDENCY_RULES = (
+    ("llm_integration", "LLM or generative AI dependency", AI_LLM_DEPENDENCIES, 4),
+    ("ai_orchestration", "AI orchestration or agent framework dependency", AI_ORCHESTRATION_DEPENDENCIES, 4),
+    ("ml_inference", "ML inference dependency", AI_ML_INFERENCE_DEPENDENCIES, 3),
+    ("vector_search", "Vector search dependency", AI_VECTOR_SEARCH_DEPENDENCIES, 3),
+    ("ai_service_integration", "Cloud AI service dependency", AI_SERVICE_DEPENDENCIES, 3),
+)
+
+AI_LLM_CONFIG_PATTERNS = (
+    r"(?ms)^\s*spring\s*:\s.*?^\s+ai\s*:",
+    r"\bspring\.ai\.",
+    r"\bazure\.openai\b",
+    r"(?m)^\s*openai\s*:",
+    r"\bopenai\.(?:api|endpoint|model|deployment)",
+    r"(?m)^\s*anthropic\s*:",
+    r"\banthropic\.(?:api|model)",
+    r"\bbedrock(?:runtime)?\b",
+    r"\bllm\.(?:provider|model|endpoint)",
+)
+
+AI_VECTOR_CONFIG_PATTERNS = (
+    r"\bvectorstore\b",
+    r"\bvector-store\b",
+    r"\bpgvector\b",
+    r"\bchromadb\b",
+    r"\bqdrant\b",
+    r"\bpinecone\b",
+    r"\bweaviate\b",
+)
+
+AI_CONTAINER_RUNTIME_TOKENS = (
+    "ghcr.io/huggingface/text-generation-inference",
+    "ollama/ollama",
+    "pytorch/torchserve",
+    "tensorflow/serving",
+    "vllm/vllm-openai",
 )
 
 
@@ -133,8 +395,15 @@ def collect_inventory_evidence(
             evidence.extend(detect_pom_inventory_evidence(path, content))
         elif (
             lower_path.endswith("requirements.txt")
+            or lower_path.endswith("requirements.in")
+            or lower_path.endswith("requirements-dev.txt")
+            or lower_path.endswith("requirements-prod.txt")
             or lower_path.endswith("pyproject.toml")
             or lower_path.endswith("pipfile")
+            or lower_path.endswith("setup.cfg")
+            or lower_path.endswith("setup.py")
+            or lower_path.endswith("environment.yml")
+            or lower_path.endswith("environment.yaml")
         ):
             evidence.extend(detect_python_inventory_evidence(path, content))
         elif lower_path.endswith("go.mod"):
@@ -349,6 +618,7 @@ def detect_package_json_inventory_evidence(path: str, content: str) -> list[Dete
         evidence.append(DetectionEvidence("middleware", path, "package.json messaging or queue dependency", 3))
     if dependencies & {"@azure/functions", "@netlify/functions", "@vercel/node", "aws-lambda", "serverless"}:
         evidence.append(DetectionEvidence("serverless", path, "package.json serverless dependency", 3))
+    evidence.extend(detect_ai_dependency_name_evidence(path, dependencies, "package.json"))
     if has_script(data, ("start", "serve")) and evidence:
         evidence.append(DetectionEvidence("microservice", path, "package.json runtime script", 1))
     return evidence
@@ -364,6 +634,7 @@ def detect_gradle_inventory_evidence(path: str, content: str) -> list[DetectionE
         evidence.append(DetectionEvidence("web_backend", path, "Gradle web backend dependency", 3))
     if any(token in lowered for token in ("spring-kafka", "kafka-clients", "rabbitmq", "amqp", "camel-", "activemq")):
         evidence.append(DetectionEvidence("middleware", path, "Gradle messaging or integration dependency", 3))
+    evidence.extend(detect_ai_dependency_text_evidence(path, lowered, "Gradle"))
     return evidence
 
 
@@ -377,6 +648,7 @@ def detect_pom_inventory_evidence(path: str, content: str) -> list[DetectionEvid
         evidence.append(DetectionEvidence("web_backend", path, "Maven web backend dependency", 3))
     if any(token in lowered for token in ("spring-kafka", "kafka-clients", "rabbitmq", "amqp", "camel-", "activemq")):
         evidence.append(DetectionEvidence("middleware", path, "Maven messaging or integration dependency", 3))
+    evidence.extend(detect_ai_dependency_text_evidence(path, lowered, "Maven"))
     return evidence
 
 
@@ -393,6 +665,7 @@ def detect_python_inventory_evidence(path: str, content: str) -> list[DetectionE
         evidence.append(DetectionEvidence("middleware", path, "Python messaging or worker dependency", 3))
     if dependency_text_has_any(lowered, ("azure-functions", "functions-framework")):
         evidence.append(DetectionEvidence("serverless", path, "Python serverless dependency", 3))
+    evidence.extend(detect_ai_dependency_text_evidence(path, lowered, "Python"))
     return evidence
 
 
@@ -407,6 +680,7 @@ def detect_go_mod_inventory_evidence(path: str, content: str) -> list[DetectionE
         evidence.append(DetectionEvidence("api_service", path, "Go service API dependency", 2))
     if any(token in lowered for token in ("shopify/sarama", "confluent-kafka-go", "streadway/amqp", "rabbitmq/amqp")):
         evidence.append(DetectionEvidence("middleware", path, "Go messaging dependency", 3))
+    evidence.extend(detect_ai_dependency_text_evidence(path, lowered, "Go"))
     return evidence
 
 
@@ -422,14 +696,18 @@ def detect_csproj_inventory_evidence(path: str, content: str) -> list[DetectionE
     if "grpc" in lowered:
         evidence.append(DetectionEvidence("api_service", path, ".NET gRPC dependency", 3))
         evidence.append(DetectionEvidence("microservice", path, ".NET gRPC service dependency", 2))
+    evidence.extend(detect_ai_dependency_text_evidence(path, lowered, ".NET"))
     return evidence
 
 
 def detect_container_evidence(path: str, content: str) -> list[DetectionEvidence]:
     lowered = content.lower()
+    evidence: list[DetectionEvidence] = []
     if any(token in lowered for token in (" from ", "from ", "services:", "image:", "build:", "expose ", "cmd ", "entrypoint ")):
-        return [DetectionEvidence("containerized_service", path, "Container runtime configuration", 2)]
-    return []
+        evidence.append(DetectionEvidence("containerized_service", path, "Container runtime configuration", 2))
+    if any(token in lowered for token in AI_CONTAINER_RUNTIME_TOKENS):
+        evidence.extend(ai_capability_evidence(path, "ml_inference", "Container AI runtime image", 3))
+    return evidence
 
 
 def detect_serverless_evidence(path: str, content: str) -> list[DetectionEvidence]:
@@ -453,6 +731,10 @@ def detect_application_config_evidence(path: str, content: str) -> list[Detectio
         evidence.append(DetectionEvidence("microservice", path, "Spring application runtime configuration", 1))
     if "management.endpoints.web" in lowered:
         evidence.append(DetectionEvidence("web_backend", path, "Spring web management endpoints configured", 1))
+    if any(re.search(pattern, lowered) for pattern in AI_LLM_CONFIG_PATTERNS):
+        evidence.extend(ai_capability_evidence(path, "llm_integration", "AI or LLM runtime configuration", 3))
+    if any(re.search(pattern, lowered) for pattern in AI_VECTOR_CONFIG_PATTERNS):
+        evidence.extend(ai_capability_evidence(path, "vector_search", "Vector search runtime configuration", 2))
     return evidence
 
 
@@ -464,7 +746,78 @@ def has_script(data: dict[str, object], names: Iterable[str]) -> bool:
 
 
 def dependency_text_has_any(content: str, names: Iterable[str]) -> bool:
-    return any(re.search(rf"(?<![a-z0-9_.-]){re.escape(name)}(?![a-z0-9_.-])", content) for name in names)
+    return bool(dependency_text_matches(content, names))
+
+
+def dependency_text_matches(content: str, names: Iterable[str]) -> list[str]:
+    return sorted(
+        {
+            name
+            for name in names
+            if re.search(rf"(?<![a-z0-9_.-]){re.escape(name)}(?![a-z0-9_.-])", content)
+        }
+    )
+
+
+def detect_ai_dependency_name_evidence(
+    path: str,
+    dependency_names: Iterable[str],
+    source_label: str,
+) -> list[DetectionEvidence]:
+    normalized = {name.lower() for name in dependency_names}
+    return collect_ai_dependency_evidence(
+        path,
+        source_label,
+        lambda names: sorted(normalized & names),
+    )
+
+
+def detect_ai_dependency_text_evidence(path: str, content: str, source_label: str) -> list[DetectionEvidence]:
+    lowered = content.lower()
+    return collect_ai_dependency_evidence(
+        path,
+        source_label,
+        lambda names: dependency_text_matches(lowered, names),
+    )
+
+
+def collect_ai_dependency_evidence(
+    path: str,
+    source_label: str,
+    matcher: Callable[[frozenset[str]], list[str]],
+) -> list[DetectionEvidence]:
+    evidence: list[DetectionEvidence] = []
+    matched_dependencies: list[str] = []
+    for category, detail, dependency_names, weight in AI_DEPENDENCY_RULES:
+        matches = matcher(dependency_names)
+        if not matches:
+            continue
+        matched_dependencies.extend(matches)
+        evidence.append(DetectionEvidence(category, path, f"{source_label} {detail}: {format_matches(matches)}", weight))
+    if evidence:
+        evidence.insert(
+            0,
+            DetectionEvidence(
+                "ai_enabled",
+                path,
+                f"{source_label} AI dependency evidence: {format_matches(matched_dependencies)}",
+                3,
+            ),
+        )
+    return evidence
+
+
+def ai_capability_evidence(path: str, category: str, detail: str, weight: int) -> list[DetectionEvidence]:
+    return [
+        DetectionEvidence("ai_enabled", path, detail, 2),
+        DetectionEvidence(category, path, detail, weight),
+    ]
+
+
+def format_matches(matches: Iterable[str]) -> str:
+    unique = sorted(set(matches))
+    suffix = "" if len(unique) <= 6 else f" and {len(unique) - 6} more"
+    return ", ".join(unique[:6]) + suffix
 
 
 def detect_expo_evidence(path: str, content: str) -> list[DetectionEvidence]:

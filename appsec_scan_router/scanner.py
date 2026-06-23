@@ -697,6 +697,15 @@ def inventory_types_from_categories(categories: Iterable[str]) -> list[str]:
         types.append("library")
     if "infrastructure_as_code" in category_set:
         types.append("infrastructure")
+    if category_set & {
+        "ai_enabled",
+        "llm_integration",
+        "ai_orchestration",
+        "ml_inference",
+        "vector_search",
+        "ai_service_integration",
+    }:
+        types.append("ai_enabled")
     return [inventory_type for inventory_type in KNOWN_INVENTORY_TYPES if inventory_type in types]
 
 
