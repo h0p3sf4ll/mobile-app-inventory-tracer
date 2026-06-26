@@ -152,11 +152,12 @@ Run the browser UI on port `48731`:
 
 ```bash
 mkdir -p reports
+cp .env.example .env
 docker run --rm \
   -p 48731:48731 \
+  --env-file .env \
   -e ADO_PAT="$ADO_PAT" \
   -e GITHUB_TOKEN="$GITHUB_TOKEN" \
-  -e APPSEC_INVENTORY_POSTGRES_PASSWORD=postgres \
   -v "$PWD/reports:/reports" \
   appsec-inventory-service \
   ui \
@@ -215,7 +216,8 @@ The image runs as a non-root user and writes reports to `/reports`.
 appsec-inventory-service-ui --host 127.0.0.1 --port 48731 --reports-dir reports
 ```
 
-The UI includes provider selection, GitHub sign-in, secure token saving, whole-organization scans, confidence controls,
+The UI opens on a sign-in page and supports GitHub SSO, Google SSO, and an optional local test user login for
+development. After sign-in, it includes provider selection, secure token saving, whole-organization scans, confidence controls,
 activity mode, application type filters, branch age cutoff, worker tuning, mobile-only store lookup, live logs, stop
 control, a scan status bar, and a dedicated reports tab. Required and optional fields are labeled, scan defaults are
 shown inline, and ETA is calculated from structured scanner progress events.
@@ -232,17 +234,39 @@ Preferred environment variables:
 | `APPSEC_INVENTORY_SERVICE_REPORTS_DIR` | Default reports directory |
 | `APPSEC_INVENTORY_SERVICE_GITHUB_CLIENT_ID` | GitHub OAuth app client ID for UI sign-in |
 | `APPSEC_INVENTORY_SERVICE_GITHUB_CLIENT_SECRET` | GitHub OAuth app secret for UI sign-in |
+| `APPSEC_INVENTORY_SERVICE_GOOGLE_CLIENT_ID` | Google OAuth client ID for UI sign-in |
+| `APPSEC_INVENTORY_SERVICE_GOOGLE_CLIENT_SECRET` | Google OAuth client secret for UI sign-in |
+| `APPSEC_INVENTORY_SERVICE_TEST_LOGIN_ENABLED` | Enables the local test user login when set to `true` |
+| `APPSEC_INVENTORY_SERVICE_TEST_USER_ID` | Optional test user ID |
+| `APPSEC_INVENTORY_SERVICE_TEST_USER_LOGIN` | Optional test user login |
+| `APPSEC_INVENTORY_SERVICE_TEST_USER_NAME` | Optional test user display name |
 | `APPSEC_INVENTORY_SERVICE_SECRET_KEY` | Optional Fernet key for encrypted token storage |
 | `APPSEC_INVENTORY_SERVICE_STATE_DIR` | Optional secure storage directory |
 | `APPSEC_INVENTORY_POSTGRES_PASSWORD` | Server-side PostgreSQL password used by the UI DSN builder |
 
 Legacy `APPSEC_SCAN_ROUTER_*` UI variables are still accepted.
 
+For Docker or local development, copy `.env.example` to `.env` and set the OAuth values before starting the UI:
+
+```bash
+cp .env.example .env
+```
+
 For GitHub sign-in, create a GitHub OAuth app and set the callback URL to:
 
 ```text
 http://localhost:48731/api/auth/github/callback
 ```
+
+For Google sign-in, create an OAuth 2.0 client and set the redirect URI to:
+
+```text
+http://localhost:48731/api/auth/google/callback
+```
+
+Both SSO buttons remain unavailable until their matching client ID and client secret are present in the UI process
+environment. The test user button bypasses external SSO and is intended only for local development before a public
+callback domain is available. Keep `APPSEC_INVENTORY_SERVICE_TEST_LOGIN_ENABLED=false` or unset in shared environments.
 
 Saved provider tokens are encrypted at rest under the UI state directory and are never returned to the browser. In
 shared deployments, set `APPSEC_INVENTORY_SERVICE_SECRET_KEY` from a secret manager instead of relying on the generated

@@ -1,13 +1,22 @@
 const form = document.querySelector("#scanForm");
+const loginPage = document.querySelector("#loginPage");
+const appShell = document.querySelector("#appShell");
 const startScanButton = document.querySelector("#startScan");
 const stopScanButton = document.querySelector("#stopScan");
 const refreshButton = document.querySelector("#refreshScans");
 const resetDefaultsButton = document.querySelector("#resetDefaults");
 const toggleTokenButton = document.querySelector("#toggleToken");
 const loginGitHub = document.querySelector("#loginGitHub");
+const loginGitHubSso = document.querySelector("#loginGitHubSso");
+const loginGoogleSso = document.querySelector("#loginGoogleSso");
+const loginTestSso = document.querySelector("#loginTestSso");
 const logoutGitHub = document.querySelector("#logoutGitHub");
 const forgetToken = document.querySelector("#forgetToken");
 const authStatus = document.querySelector("#authStatus");
+const loginSummary = document.querySelector("#loginSummary");
+const githubSsoStatus = document.querySelector("#githubSsoStatus");
+const googleSsoStatus = document.querySelector("#googleSsoStatus");
+const testSsoStatus = document.querySelector("#testSsoStatus");
 const saveTokenHint = document.querySelector("#saveTokenHint");
 const copyCommandButton = document.querySelector("#copyCommand");
 const clearLogsButton = document.querySelector("#clearLogs");
@@ -97,9 +106,14 @@ document.addEventListener("DOMContentLoaded", async () => {
   syncDatabaseFields();
   syncMobileOptions();
   bindEvents();
+  renderShell();
   await loadSession();
-  await loadScans();
   showAuthResult();
+  if (isLoggedIn()) {
+    await loadScans();
+  } else {
+    renderAll();
+  }
   state.timer = window.setInterval(tick, 1000);
 });
 
@@ -119,6 +133,9 @@ function bindEvents() {
   toggleTokenButton.addEventListener("click", toggleToken);
   logoutGitHub.addEventListener("click", logout);
   forgetToken.addEventListener("click", forgetSavedToken);
+  loginGitHubSso.addEventListener("click", handleSsoClick);
+  loginGoogleSso.addEventListener("click", handleSsoClick);
+  loginTestSso.addEventListener("click", handleSsoClick);
   copyCommandButton.addEventListener("click", copyCommand);
   clearLogsButton.addEventListener("click", () => {
     state.logs = [];
@@ -204,8 +221,12 @@ async function logout() {
       throw new Error(data.error || "Sign out failed.");
     }
     state.session = data.session || null;
+    state.scans = [];
+    state.activeScan = null;
+    state.logs = [];
     form.elements.saveToken.checked = false;
     renderAuth();
+    renderAll();
     syncCredentialFields();
     notify("Signed out.");
   } catch (error) {
@@ -235,6 +256,13 @@ async function forgetSavedToken() {
 }
 
 async function loadScans(preferredId = "") {
+  if (!isLoggedIn()) {
+    state.scans = [];
+    state.activeScan = null;
+    state.logs = [];
+    renderAll();
+    return;
+  }
   try {
     const response = await fetch("/api/scans");
     const data = await response.json();
@@ -501,8 +529,8 @@ function syncCredentialFields() {
   saveTokenHint.textContent = loggedIn
     ? hasSavedToken
       ? "Saved token available for this provider"
-      : "Checked tokens are encrypted and saved for your GitHub user"
-    : "Sign in with GitHub to save or reuse provider tokens";
+      : "Checked tokens are encrypted and saved for your SSO user"
+    : "Sign in to save or reuse provider tokens";
   forgetToken.classList.toggle("hidden", !loggedIn || !hasSavedToken);
 }
 
@@ -608,14 +636,82 @@ function setBusy(isBusy) {
 function renderAuth() {
   const session = state.session || {};
   const loggedIn = Boolean(session.loggedIn);
-  const enabled = Boolean(session.githubLoginEnabled);
+  const providers = authProviders(session);
+  const githubProvider = providers.find((provider) => provider.id === "github") || {};
+  const googleProvider = providers.find((provider) => provider.id === "google") || {};
+  const testProvider = providers.find((provider) => provider.id === "test") || {};
+  const githubEnabled = Boolean(githubProvider.enabled);
+  const enabledCount = providers.filter((provider) => provider.enabled).length;
+  renderShell();
   authStatus.textContent = loggedIn
-    ? `Signed in as ${session.user && session.user.login ? session.user.login : "GitHub user"}`
-    : enabled
+    ? `Signed in as ${session.user && session.user.login ? session.user.login : "SSO user"}`
+    : enabledCount
       ? "Not signed in"
-      : "GitHub login not configured";
-  loginGitHub.classList.toggle("hidden", loggedIn || !enabled);
+      : "SSO login not configured";
+  loginSummary.textContent = enabledCount
+    ? "Choose an enabled sign-in option."
+    : "No sign-in options are configured for this instance.";
+  loginGitHub.classList.toggle("hidden", loggedIn || !githubEnabled);
+  loginGitHub.href = githubEnabled ? githubProvider.startUrl || "/api/auth/github/start" : "#";
   logoutGitHub.classList.toggle("hidden", !loggedIn);
+  renderSsoOption(loginGitHubSso, githubSsoStatus, githubProvider, "GitHub");
+  renderSsoOption(loginGoogleSso, googleSsoStatus, googleProvider, "Google");
+  renderSsoOption(loginTestSso, testSsoStatus, testProvider, "Test user");
+}
+
+function renderShell() {
+  const loggedIn = isLoggedIn();
+  loginPage.hidden = loggedIn;
+  appShell.hidden = !loggedIn;
+  document.body.classList.toggle("login-mode", !loggedIn);
+}
+
+function renderSsoOption(link, statusElement, provider, label) {
+  const enabled = Boolean(provider && provider.enabled);
+  link.href = enabled ? provider.startUrl || `/api/auth/${provider.id}/start` : "#";
+  link.classList.toggle("disabled", !enabled);
+  link.setAttribute("aria-disabled", String(!enabled));
+  statusElement.textContent = enabled ? "Available" : "Not configured";
+  link.dataset.providerLabel = label;
+}
+
+function authProviders(session) {
+  if (Array.isArray(session.authProviders) && session.authProviders.length) {
+    return session.authProviders;
+  }
+  return [
+    {
+      id: "github",
+      label: "GitHub SSO",
+      enabled: Boolean(session.githubLoginEnabled),
+      startUrl: "/api/auth/github/start",
+    },
+    {
+      id: "google",
+      label: "Google SSO",
+      enabled: Boolean(session.googleLoginEnabled),
+      startUrl: "/api/auth/google/start",
+    },
+    {
+      id: "test",
+      label: "Test User",
+      enabled: Boolean(session.testLoginEnabled),
+      startUrl: "/api/auth/test/start",
+    },
+  ];
+}
+
+function handleSsoClick(event) {
+  const link = event.currentTarget;
+  if (link.getAttribute("aria-disabled") !== "true") {
+    return;
+  }
+  event.preventDefault();
+  notify(`${link.dataset.providerLabel || "SSO"} is not configured.`);
+}
+
+function isLoggedIn() {
+  return Boolean(state.session && state.session.loggedIn);
 }
 
 function authHeaders(jsonBody) {
@@ -632,17 +728,31 @@ function authHeaders(jsonBody) {
 function showAuthResult() {
   const params = new URLSearchParams(window.location.search);
   const auth = params.get("auth");
+  const provider = authProviderName(params.get("provider"));
   if (auth === "success") {
-    notify("Signed in with GitHub.");
+    notify(`Signed in with ${provider}.`);
   } else if (auth === "failed") {
-    notify("GitHub sign-in failed.");
+    notify(`${provider} sign-in failed.`);
   }
   if (auth) {
     window.history.replaceState({}, "", window.location.pathname);
   }
 }
 
+function authProviderName(provider) {
+  if (provider === "google") {
+    return "Google";
+  }
+  if (provider === "test") {
+    return "test user";
+  }
+  return "GitHub";
+}
+
 function tick() {
+  if (!isLoggedIn()) {
+    return;
+  }
   if (state.activeScan) {
     runtimeValue.textContent = scanRuntime(state.activeScan);
   }

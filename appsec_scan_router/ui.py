@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from .auth import AuthManager, GitHubOAuthConfig, SessionRecord, expired_session_cookie, session_cookie
+from .auth import AuthManager, GitHubOAuthConfig, GoogleOAuthConfig, SessionRecord, expired_session_cookie, session_cookie
 from .constants import (
     APPLICATION_TYPE_LABELS,
     DEFAULT_OUT_PREFIX,
@@ -280,6 +280,15 @@ class AppSecScanRouterHandler(BaseHTTPRequestHandler):
         if path == "/api/auth/github/callback":
             self.handle_github_auth_callback(parsed.query)
             return
+        if path == "/api/auth/google/start":
+            self.handle_google_auth_start()
+            return
+        if path == "/api/auth/google/callback":
+            self.handle_google_auth_callback(parsed.query)
+            return
+        if path == "/api/auth/test/start":
+            self.handle_test_auth_start()
+            return
         if path == "/api/scans":
             self.send_json({"scans": self.manager.list_scans(owner_scope(self.current_session()))})
             return
@@ -366,7 +375,7 @@ class AppSecScanRouterHandler(BaseHTTPRequestHandler):
 
     def handle_github_auth_start(self) -> None:
         try:
-            self.redirect(self.auth.oauth.authorization_url(self.redirect_uri()))
+            self.redirect(self.auth.github_oauth.authorization_url(self.redirect_uri("github")))
         except ValueError as exc:
             self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
 
@@ -375,15 +384,44 @@ class AppSecScanRouterHandler(BaseHTTPRequestHandler):
         code = clean_text(first_query_value(params, "code"))
         state = clean_text(first_query_value(params, "state"))
         if not code or not state:
-            self.redirect("/?auth=failed")
+            self.redirect("/?auth=failed&provider=github")
             return
         try:
-            user = self.auth.oauth.complete(code, state, self.redirect_uri())
+            user = self.auth.github_oauth.complete(code, state, self.redirect_uri("github"))
             record = self.auth.create_session(user)
         except ValueError:
-            self.redirect("/?auth=failed")
+            self.redirect("/?auth=failed&provider=github")
             return
-        self.redirect("/?auth=success", session_cookie(record.id, secure_cookie()))
+        self.redirect("/?auth=success&provider=github", session_cookie(record.id, secure_cookie()))
+
+    def handle_google_auth_start(self) -> None:
+        try:
+            self.redirect(self.auth.google_oauth.authorization_url(self.redirect_uri("google")))
+        except ValueError as exc:
+            self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+
+    def handle_google_auth_callback(self, query: str) -> None:
+        params = parse_qs(query)
+        code = clean_text(first_query_value(params, "code"))
+        state = clean_text(first_query_value(params, "state"))
+        if not code or not state:
+            self.redirect("/?auth=failed&provider=google")
+            return
+        try:
+            user = self.auth.google_oauth.complete(code, state, self.redirect_uri("google"))
+            record = self.auth.create_session(user)
+        except ValueError:
+            self.redirect("/?auth=failed&provider=google")
+            return
+        self.redirect("/?auth=success&provider=google", session_cookie(record.id, secure_cookie()))
+
+    def handle_test_auth_start(self) -> None:
+        try:
+            record = self.auth.create_test_session()
+        except ValueError as exc:
+            self.send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        self.redirect("/?auth=success&provider=test", session_cookie(record.id, secure_cookie()))
 
     def handle_logout(self) -> None:
         record = self.current_session()
@@ -511,17 +549,17 @@ class AppSecScanRouterHandler(BaseHTTPRequestHandler):
 
     def valid_csrf(self, record: SessionRecord | None) -> bool:
         if not record:
-            self.send_json({"error": "Sign in with GitHub first."}, HTTPStatus.UNAUTHORIZED)
+            self.send_json({"error": "Sign in first."}, HTTPStatus.UNAUTHORIZED)
             return False
         if self.headers.get("X-CSRF-Token", "") != record.csrf_token:
             self.send_json({"error": "Session validation failed. Refresh and try again."}, HTTPStatus.FORBIDDEN)
             return False
         return True
 
-    def redirect_uri(self) -> str:
+    def redirect_uri(self, provider: str) -> str:
         proto = self.headers.get("X-Forwarded-Proto") or ("https" if secure_cookie() else "http")
         host = self.headers.get("X-Forwarded-Host") or self.headers.get("Host") or f"{self.server.server_name}:{self.server.server_port}"
-        return f"{proto}://{host}/api/auth/github/callback"
+        return f"{proto}://{host}/api/auth/{provider}/callback"
 
 
 def normalize_scan_config(config: dict[str, Any]) -> dict[str, Any]:
@@ -762,7 +800,9 @@ def parse_iso_datetime(value: str) -> datetime | None:
 
 
 def default_ui_config(reports_root: Path) -> dict[str, Any]:
-    oauth_config = GitHubOAuthConfig.from_env()
+    github_oauth_config = GitHubOAuthConfig.from_env()
+    google_oauth_config = GoogleOAuthConfig.from_env()
+    test_login_enabled = clean_text(os.getenv("APPSEC_INVENTORY_SERVICE_TEST_LOGIN_ENABLED")).lower() in {"1", "true", "yes", "on"}
     return {
         "defaults": {
             "provider": "azure-devops",
@@ -790,7 +830,29 @@ def default_ui_config(reports_root: Path) -> dict[str, Any]:
             "postgresTable": DEFAULT_POSTGRES_TABLE,
         },
         "auth": {
-            "githubLoginEnabled": oauth_config.enabled,
+            "githubLoginEnabled": github_oauth_config.enabled,
+            "googleLoginEnabled": google_oauth_config.enabled,
+            "testLoginEnabled": test_login_enabled,
+            "authProviders": [
+                {
+                    "id": "github",
+                    "label": "GitHub SSO",
+                    "enabled": github_oauth_config.enabled,
+                    "startUrl": "/api/auth/github/start",
+                },
+                {
+                    "id": "google",
+                    "label": "Google SSO",
+                    "enabled": google_oauth_config.enabled,
+                    "startUrl": "/api/auth/google/start",
+                },
+                {
+                    "id": "test",
+                    "label": "Test User",
+                    "enabled": test_login_enabled,
+                    "startUrl": "/api/auth/test/start",
+                },
+            ],
             "secureStorage": True,
         },
         "reportsRoot": str(reports_root),

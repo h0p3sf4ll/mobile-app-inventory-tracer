@@ -38,7 +38,7 @@ class GitHubEnterpriseClient:
             "Authorization": f"Bearer {token}",
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
-            "User-Agent": "appsec-inventory-service/1.5",
+            "User-Agent": "appsec-inventory-service/1.5.1",
         }
         self._retry = Retry(
             total=5,

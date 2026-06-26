@@ -8,8 +8,9 @@ from unittest.mock import patch
 import appsec_scan_router as scanner
 import ado_mobile_scanner
 import mobile_scanner
-from appsec_scan_router.auth import CredentialStore
+from appsec_scan_router.auth import AuthManager, CredentialStore, GoogleOAuthConfig, TestLoginConfig
 from appsec_scan_router.postgres import POSTGRES_COLUMNS
+from appsec_scan_router.ui import default_ui_config
 from openpyxl import load_workbook
 
 
@@ -45,6 +46,76 @@ class AuthTests(unittest.TestCase):
             self.assertTrue(store.statuses("user-1")["azure-devops"])
             encrypted = (Path(tmpdir) / "credentials.json.enc").read_bytes()
             self.assertNotIn(b"secret-token", encrypted)
+
+    def test_google_oauth_config_reads_environment(self):
+        with patch.dict(
+            "os.environ",
+            {
+                "APPSEC_INVENTORY_SERVICE_GOOGLE_CLIENT_ID": "google-client",
+                "APPSEC_INVENTORY_SERVICE_GOOGLE_CLIENT_SECRET": "google-secret",
+            },
+            clear=False,
+        ):
+            config = GoogleOAuthConfig.from_env()
+
+        self.assertTrue(config.enabled)
+        self.assertEqual(config.client_id, "google-client")
+        self.assertEqual(config.scope, "openid email profile")
+
+    def test_test_login_config_reads_environment(self):
+        with patch.dict(
+            "os.environ",
+            {
+                "APPSEC_INVENTORY_SERVICE_TEST_LOGIN_ENABLED": "true",
+                "APPSEC_INVENTORY_SERVICE_TEST_USER_ID": "local-user",
+                "APPSEC_INVENTORY_SERVICE_TEST_USER_LOGIN": "local.user@example.test",
+                "APPSEC_INVENTORY_SERVICE_TEST_USER_NAME": "Local User",
+            },
+            clear=False,
+        ):
+            config = TestLoginConfig.from_env()
+
+        user = config.user()
+
+        self.assertTrue(config.enabled)
+        self.assertEqual(user.id, "local-user")
+        self.assertEqual(user.login, "local.user@example.test")
+        self.assertEqual(user.name, "Local User")
+        self.assertEqual(user.provider, "test")
+
+    def test_auth_status_lists_github_and_google_sso(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch.dict(
+                "os.environ",
+                {
+                    "APPSEC_INVENTORY_SERVICE_GITHUB_CLIENT_ID": "github-client",
+                    "APPSEC_INVENTORY_SERVICE_GITHUB_CLIENT_SECRET": "github-secret",
+                    "APPSEC_INVENTORY_SERVICE_GOOGLE_CLIENT_ID": "google-client",
+                    "APPSEC_INVENTORY_SERVICE_GOOGLE_CLIENT_SECRET": "google-secret",
+                    "APPSEC_INVENTORY_SERVICE_TEST_LOGIN_ENABLED": "true",
+                },
+                clear=False,
+            ):
+                manager = AuthManager(Path(tmpdir))
+                status = manager.status(None)
+
+        providers = {provider["id"]: provider for provider in status["authProviders"]}
+        self.assertTrue(status["githubLoginEnabled"])
+        self.assertTrue(status["googleLoginEnabled"])
+        self.assertTrue(status["testLoginEnabled"])
+        self.assertEqual(providers["github"]["startUrl"], "/api/auth/github/start")
+        self.assertEqual(providers["google"]["startUrl"], "/api/auth/google/start")
+        self.assertEqual(providers["test"]["startUrl"], "/api/auth/test/start")
+
+    def test_default_ui_config_lists_sso_options(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch.dict("os.environ", {"APPSEC_INVENTORY_SERVICE_TEST_LOGIN_ENABLED": "true"}, clear=False):
+                config = default_ui_config(Path(tmpdir))
+
+        provider_ids = [provider["id"] for provider in config["auth"]["authProviders"]]
+        self.assertEqual(provider_ids, ["github", "google", "test"])
+        self.assertIn("googleLoginEnabled", config["auth"])
+        self.assertTrue(config["auth"]["testLoginEnabled"])
 
 
 class ProviderClientTests(unittest.TestCase):

@@ -6,8 +6,54 @@
     <title>AppSec Inventory Service</title>
     <link rel="stylesheet" href="/static/styles.css">
   </head>
-  <body>
-    <main class="shell">
+  <body class="login-mode">
+    <main class="login-shell" id="loginPage">
+      <section class="login-brand">
+        <div class="login-brand-copy">
+          <p class="eyebrow">Application inventory</p>
+          <h1>AppSec Inventory Service</h1>
+          <p>Trace source assets, ownership, and scanner-ready targets from one controlled workspace.</p>
+        </div>
+      </section>
+      <section class="login-panel" aria-labelledby="loginTitle">
+        <div>
+          <p class="eyebrow">Access</p>
+          <h2 id="loginTitle">Sign in to continue</h2>
+          <p id="loginSummary">Choose an enabled sign-in option.</p>
+        </div>
+        <div class="sso-list" aria-label="Sign-in options">
+          <a class="sso-option disabled" id="loginGitHubSso" href="#" aria-disabled="true">
+            <span class="sso-mark">
+              <img src="/static/github-mark.svg" alt="" aria-hidden="true">
+            </span>
+            <span>
+              <strong>GitHub SSO</strong>
+              <small id="githubSsoStatus">Checking configuration</small>
+            </span>
+          </a>
+          <a class="sso-option disabled" id="loginGoogleSso" href="#" aria-disabled="true">
+            <span class="sso-mark google-mark">
+              <img src="/static/google-g.svg" alt="" aria-hidden="true">
+            </span>
+            <span>
+              <strong>Google SSO</strong>
+              <small id="googleSsoStatus">Checking configuration</small>
+            </span>
+          </a>
+          <a class="sso-option disabled" id="loginTestSso" href="#" aria-disabled="true">
+            <span class="sso-mark test-mark">
+              <img src="/static/test-user.svg" alt="" aria-hidden="true">
+            </span>
+            <span>
+              <strong>Test user</strong>
+              <small id="testSsoStatus">Checking configuration</small>
+            </span>
+          </a>
+        </div>
+      </section>
+    </main>
+
+    <main class="shell" id="appShell" hidden>
       <header class="topbar">
         <div>
           <p class="eyebrow">Application inventory</p>
@@ -86,7 +132,7 @@
                 <input name="saveToken" type="checkbox">
                 <span class="toggle-copy">
                   <span>Save token securely</span>
-                  <small id="saveTokenHint">Sign in with GitHub to save or reuse provider tokens</small>
+                  <small id="saveTokenHint">Sign in to save or reuse provider tokens</small>
                 </span>
               </label>
               <button class="ghost small hidden" id="forgetToken" type="button">Forget saved token</button>

@@ -16,3 +16,4 @@ work/
 *.tmp
 .env
 .env.*
+!.env.example

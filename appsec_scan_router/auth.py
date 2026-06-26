@@ -29,6 +29,7 @@ SESSION_COOKIE_NAME = "appsec_inventory_session"
 SESSION_TTL_SECONDS = 43200
 OAUTH_STATE_TTL_SECONDS = 600
 PROVIDER_NAMES = ("azure-devops", "github-enterprise")
+TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
 
 
 @dataclass(frozen=True)
@@ -37,6 +38,7 @@ class AuthenticatedUser:
     login: str
     name: str = ""
     avatar_url: str = ""
+    provider: str = ""
 
     def as_dict(self) -> dict[str, str]:
         return {
@@ -44,6 +46,7 @@ class AuthenticatedUser:
             "login": self.login,
             "name": self.name,
             "avatarUrl": self.avatar_url,
+            "provider": self.provider,
         }
 
 
@@ -82,6 +85,57 @@ class GitHubOAuthConfig:
     @property
     def enabled(self) -> bool:
         return bool(self.client_id and self.client_secret)
+
+
+@dataclass(frozen=True)
+class GoogleOAuthConfig:
+    client_id: str
+    client_secret: str
+    authorize_url: str = "https://accounts.google.com/o/oauth2/v2/auth"
+    token_url: str = "https://oauth2.googleapis.com/token"
+    user_url: str = "https://openidconnect.googleapis.com/v1/userinfo"
+    scope: str = "openid email profile"
+
+    @classmethod
+    def from_env(cls) -> "GoogleOAuthConfig":
+        return cls(
+            client_id=clean_value(os.getenv("APPSEC_INVENTORY_SERVICE_GOOGLE_CLIENT_ID")),
+            client_secret=clean_value(os.getenv("APPSEC_INVENTORY_SERVICE_GOOGLE_CLIENT_SECRET")),
+            authorize_url=clean_value(os.getenv("APPSEC_INVENTORY_SERVICE_GOOGLE_AUTHORIZE_URL"))
+            or cls.authorize_url,
+            token_url=clean_value(os.getenv("APPSEC_INVENTORY_SERVICE_GOOGLE_TOKEN_URL")) or cls.token_url,
+            user_url=clean_value(os.getenv("APPSEC_INVENTORY_SERVICE_GOOGLE_USER_URL")) or cls.user_url,
+            scope=clean_value(os.getenv("APPSEC_INVENTORY_SERVICE_GOOGLE_SCOPE")) or cls.scope,
+        )
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.client_id and self.client_secret)
+
+
+@dataclass(frozen=True)
+class TestLoginConfig:
+    enabled: bool
+    user_id: str = "test-user"
+    login: str = "test.user@local"
+    name: str = "Test User"
+
+    @classmethod
+    def from_env(cls) -> "TestLoginConfig":
+        return cls(
+            enabled=clean_value(os.getenv("APPSEC_INVENTORY_SERVICE_TEST_LOGIN_ENABLED")).lower() in TRUE_VALUES,
+            user_id=clean_value(os.getenv("APPSEC_INVENTORY_SERVICE_TEST_USER_ID")) or cls.user_id,
+            login=clean_value(os.getenv("APPSEC_INVENTORY_SERVICE_TEST_USER_LOGIN")) or cls.login,
+            name=clean_value(os.getenv("APPSEC_INVENTORY_SERVICE_TEST_USER_NAME")) or cls.name,
+        )
+
+    def user(self) -> AuthenticatedUser:
+        return AuthenticatedUser(
+            id=self.user_id,
+            login=self.login,
+            name=self.name,
+            provider="test",
+        )
 
 
 class CredentialStore:
@@ -264,7 +318,7 @@ class GitHubOAuthService:
                     "Accept": "application/vnd.github+json",
                     "Authorization": f"Bearer {access_token}",
                     "X-GitHub-Api-Version": "2022-11-28",
-                    "User-Agent": "appsec-inventory-service/1.5",
+                    "User-Agent": "appsec-inventory-service/1.5.1",
                 },
                 timeout=20,
             )
@@ -283,6 +337,110 @@ class GitHubOAuthService:
             login=login,
             name=clean_value(data.get("name")),
             avatar_url=clean_value(data.get("avatar_url")),
+            provider="github",
+        )
+
+    def consume_state(self, state: str) -> bool:
+        clean_state = clean_value(state)
+        with self.lock:
+            expires_at = self.states.pop(clean_state, 0)
+        return bool(expires_at and expires_at > time.time())
+
+    def prune_states(self) -> None:
+        now = time.time()
+        for state, expires_at in list(self.states.items()):
+            if expires_at <= now:
+                self.states.pop(state, None)
+
+
+class GoogleOAuthService:
+    def __init__(self, config: GoogleOAuthConfig) -> None:
+        if requests is None:
+            raise SystemExit(MISSING_REQUESTS_MESSAGE)
+        self.config = config
+        self.states: dict[str, float] = {}
+        self.lock = threading.RLock()
+
+    @property
+    def enabled(self) -> bool:
+        return self.config.enabled
+
+    def authorization_url(self, redirect_uri: str) -> str:
+        if not self.enabled:
+            raise ValueError("Google login is not configured.")
+        state = secrets.token_urlsafe(32)
+        with self.lock:
+            self.states[state] = time.time() + OAUTH_STATE_TTL_SECONDS
+            self.prune_states()
+        query = urlencode(
+            {
+                "client_id": self.config.client_id,
+                "redirect_uri": redirect_uri,
+                "response_type": "code",
+                "scope": self.config.scope,
+                "state": state,
+            }
+        )
+        return f"{self.config.authorize_url}?{query}"
+
+    def complete(self, code: str, state: str, redirect_uri: str) -> AuthenticatedUser:
+        if not self.consume_state(state):
+            raise ValueError("Google login expired. Try signing in again.")
+        access_token = self.exchange_code(code, redirect_uri)
+        return self.fetch_user(access_token)
+
+    def exchange_code(self, code: str, redirect_uri: str) -> str:
+        try:
+            response = requests.post(
+                self.config.token_url,
+                headers={"Accept": "application/json"},
+                data={
+                    "client_id": self.config.client_id,
+                    "client_secret": self.config.client_secret,
+                    "code": code,
+                    "grant_type": "authorization_code",
+                    "redirect_uri": redirect_uri,
+                },
+                timeout=20,
+            )
+            response.raise_for_status()
+            data = response.json()
+        except requests.RequestException as exc:
+            raise ValueError(f"Google login failed while exchanging the authorization code: {exc}") from exc
+        except ValueError as exc:
+            raise ValueError("Google login returned an invalid token response.") from exc
+        token = clean_value(data.get("access_token")) if isinstance(data, dict) else ""
+        if not token:
+            raise ValueError("Google login did not return an access token.")
+        return token
+
+    def fetch_user(self, access_token: str) -> AuthenticatedUser:
+        try:
+            response = requests.get(
+                self.config.user_url,
+                headers={
+                    "Accept": "application/json",
+                    "Authorization": f"Bearer {access_token}",
+                    "User-Agent": "appsec-inventory-service/1.5.1",
+                },
+                timeout=20,
+            )
+            response.raise_for_status()
+            data = response.json()
+        except requests.RequestException as exc:
+            raise ValueError(f"Google login failed while loading the user profile: {exc}") from exc
+        except ValueError as exc:
+            raise ValueError("Google login returned an invalid user profile.") from exc
+        subject = clean_value(data.get("sub")) if isinstance(data, dict) else ""
+        email = clean_value(data.get("email")) if isinstance(data, dict) else ""
+        if not subject:
+            raise ValueError("Google login returned an incomplete user profile.")
+        return AuthenticatedUser(
+            id=f"google:{subject}",
+            login=email or subject,
+            name=clean_value(data.get("name")),
+            avatar_url=clean_value(data.get("picture")),
+            provider="google",
         )
 
     def consume_state(self, state: str) -> bool:
@@ -301,7 +459,10 @@ class GitHubOAuthService:
 class AuthManager:
     def __init__(self, reports_root: Path) -> None:
         self.sessions = SessionStore()
-        self.oauth = GitHubOAuthService(GitHubOAuthConfig.from_env())
+        self.github_oauth = GitHubOAuthService(GitHubOAuthConfig.from_env())
+        self.google_oauth = GoogleOAuthService(GoogleOAuthConfig.from_env())
+        self.test_login = TestLoginConfig.from_env()
+        self.oauth = self.github_oauth
         self.credentials = CredentialStore(auth_state_dir(reports_root))
 
     def session(self, cookie_header: str) -> SessionRecord | None:
@@ -321,16 +482,43 @@ class AuthManager:
             "loggedIn": bool(record),
             "user": record.user.as_dict() if record else None,
             "csrfToken": record.csrf_token if record else "",
-            "githubLoginEnabled": self.oauth.enabled,
+            "githubLoginEnabled": self.github_oauth.enabled,
+            "googleLoginEnabled": self.google_oauth.enabled,
+            "testLoginEnabled": self.test_login.enabled,
+            "authProviders": [
+                {
+                    "id": "github",
+                    "label": "GitHub SSO",
+                    "enabled": self.github_oauth.enabled,
+                    "startUrl": "/api/auth/github/start",
+                },
+                {
+                    "id": "google",
+                    "label": "Google SSO",
+                    "enabled": self.google_oauth.enabled,
+                    "startUrl": "/api/auth/google/start",
+                },
+                {
+                    "id": "test",
+                    "label": "Test User",
+                    "enabled": self.test_login.enabled,
+                    "startUrl": "/api/auth/test/start",
+                },
+            ],
             "credentials": credentials,
         }
+
+    def create_test_session(self) -> SessionRecord:
+        if not self.test_login.enabled:
+            raise ValueError("Test user login is not enabled.")
+        return self.create_session(self.test_login.user())
 
     def apply_credentials(self, payload: dict[str, Any], record: SessionRecord | None) -> dict[str, Any]:
         provider = provider_name(payload.get("provider", "azure-devops"))
         token = clean_value(payload.get("token"))
         save_token = bool(payload.get("saveToken"))
         if save_token and not record:
-            raise ValueError("Sign in with GitHub before saving provider tokens.")
+            raise ValueError("Sign in before saving provider tokens.")
         if token and save_token and record:
             self.credentials.save_token(record.user.id, provider, token)
         if not token and record:
@@ -342,7 +530,7 @@ class AuthManager:
 
     def delete_credential(self, provider: str, record: SessionRecord | None) -> None:
         if not record:
-            raise ValueError("Sign in with GitHub before managing saved tokens.")
+            raise ValueError("Sign in before managing saved tokens.")
         self.credentials.delete_token(record.user.id, provider)
 
 
