@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>AppSec Atlas | Application Security Posture Management</title>
-    <link rel="stylesheet" href="/static/styles.css?v=28">
+    <link rel="stylesheet" href="/static/styles.css?v=30">
   </head>
   <body class="login-mode">
     <main class="login-shell" id="loginPage">
@@ -1024,6 +1024,7 @@
               <div class="database-results-toolbar">
                 <strong id="databaseResultSummary" aria-live="polite">Search to view inventory records</strong>
                 <div class="database-export-actions">
+                <button class="ghost compact-button" id="toggleContributors" type="button" aria-pressed="false">Show contributors</button>
                   <button class="primary" id="exportDatabaseXlsx" type="button">Export XLSX</button>
                   <button class="ghost" id="exportDatabaseCsv" type="button">Export CSV</button>
                   <button class="ghost" id="exportDatabaseJson" type="button">Export JSON</button>
@@ -1043,6 +1044,7 @@
                     <col class="column-contributors">
                     <col class="column-source">
                     <col class="column-types">
+                    <col class="column-row-actions">
                   </colgroup>
                   <thead>
                     <tr class="database-sort-row">
@@ -1056,6 +1058,7 @@
                       <th scope="col" data-sort-column="contributors"><button class="database-sort-button" type="button" data-database-sort="contributors">Contributors<span class="sort-indicator" aria-hidden="true"></span></button></th>
                       <th scope="col" data-sort-column="source"><button class="database-sort-button" type="button" data-database-sort="source">Source<span class="sort-indicator" aria-hidden="true"></span></button></th>
                       <th scope="col" data-sort-column="types"><button class="database-sort-button" type="button" data-database-sort="types">Types<span class="sort-indicator" aria-hidden="true"></span></button></th>
+                      <th scope="col" class="column-actions-header"></th>
                     </tr>
                     <tr class="database-filter-row">
                       <th><input id="filterApplication" type="search" maxlength="120" placeholder="Filter" aria-label="Filter applications"></th>
@@ -1077,8 +1080,7 @@
                       <th><input id="filterContributors" type="search" maxlength="120" placeholder="Filter" aria-label="Filter contributors"></th>
                       <th><select id="filterSource" aria-label="Filter source"><option value="">Any</option><option value="azure-devops">Azure DevOps</option><option value="github-enterprise">GitHub</option></select></th>
                       <th>
-                        <details class="database-multi-filter" id="filterType">
-                          <summary id="filterTypeSummary" aria-label="Filter application types. All types">Any type</summary>
+                        <details class="database-multi-filter" id="filterType">                          <summary id="filterTypeSummary" aria-label="Filter application types. All types">Any type</summary>
                           <div class="database-multi-filter-menu" role="group" aria-label="Application types">
                             <label class="database-type-option"><input name="databaseFilterType" type="checkbox" value="mobile_app"><span>Mobile app</span></label>
                             <label class="database-type-option"><input name="databaseFilterType" type="checkbox" value="web_app"><span>Web app</span></label>
@@ -1094,11 +1096,12 @@
                           </div>
                         </details>
                       </th>
+                      <th></th>
                     </tr>
                   </thead>
                   <tbody id="databaseResultRows">
                     <tr>
-                      <td class="database-empty-row" colspan="10">Loading inventory records.</td>
+                      <td class="database-empty-row" colspan="11">Loading inventory records.</td>
                     </tr>
                   </tbody>
                 </table>
@@ -1173,36 +1176,18 @@
                 </div>
                 <div class="bom-export-section" id="bomTypeSection">
                   <p class="bom-export-field-label">BOM type</p>
-                  <div class="bom-option-group">
-                    <label class="bom-option">
-                      <input type="radio" name="bomType" value="sbom" checked>
-                      <span class="bom-option-text"><strong>SBOM</strong><small>Software BOM &mdash; all inventory records</small></span>
-                    </label>
-                    <label class="bom-option">
-                      <input type="radio" name="bomType" value="aibom">
-                      <span class="bom-option-text"><strong>AIBOM</strong><small>AI BOM &mdash; AI-enabled applications only</small></span>
-                    </label>
-                    <label class="bom-option">
-                      <input type="radio" name="bomType" value="mlbom">
-                      <span class="bom-option-text"><strong>MLBOM</strong><small>ML BOM &mdash; ML-enabled applications only</small></span>
-                    </label>
+                  <div class="bom-choice-group" role="group">
+                    <label class="bom-choice"><input type="radio" name="bomType" value="sbom" checked><span>SBOM<small>Software &mdash; all records</small></span></label>
+                    <label class="bom-choice"><input type="radio" name="bomType" value="aibom"><span>AIBOM<small>AI-enabled only</small></span></label>
+                    <label class="bom-choice"><input type="radio" name="bomType" value="mlbom"><span>MLBOM<small>ML-enabled only</small></span></label>
                   </div>
                 </div>
                 <div class="bom-export-section">
                   <p class="bom-export-field-label">Format</p>
-                  <div class="bom-option-group">
-                    <label class="bom-option">
-                      <input type="radio" name="bomFormat" value="cdx_json" checked>
-                      <span class="bom-option-text"><strong>CycloneDX JSON</strong><small>CycloneDX 1.5 &mdash; .cdx.json</small></span>
-                    </label>
-                    <label class="bom-option">
-                      <input type="radio" name="bomFormat" value="cdx_xml">
-                      <span class="bom-option-text"><strong>CycloneDX XML</strong><small>CycloneDX 1.5 &mdash; .cdx.xml</small></span>
-                    </label>
-                    <label class="bom-option">
-                      <input type="radio" name="bomFormat" value="spdx_json">
-                      <span class="bom-option-text"><strong>SPDX JSON</strong><small>SPDX 2.3 &mdash; .spdx.json</small></span>
-                    </label>
+                  <div class="bom-choice-group" role="group">
+                    <label class="bom-choice"><input type="radio" name="bomFormat" value="cdx_json" checked><span>CycloneDX JSON<small>CycloneDX 1.5 &middot; .cdx.json</small></span></label>
+                    <label class="bom-choice"><input type="radio" name="bomFormat" value="cdx_xml"><span>CycloneDX XML<small>CycloneDX 1.5 &middot; .cdx.xml</small></span></label>
+                    <label class="bom-choice"><input type="radio" name="bomFormat" value="spdx_json"><span>SPDX JSON<small>SPDX 2.3 &middot; .spdx.json</small></span></label>
                   </div>
                 </div>
                 <div class="bom-export-footer">
@@ -1438,7 +1423,7 @@
         <button class="ghost compact-button" id="closeConnectorLogsFooter" type="button">Close</button>
       </div>
     </dialog>
-    <script src="/static/app.js?v=43" type="module"></script>
+    <script src="/static/app.js?v=46" type="module"></script>
 
     <!-- Column help tooltips (shared, repositioned by JS) -->
     <div class="col-help-popover" id="colHelpPopover" role="tooltip" hidden>

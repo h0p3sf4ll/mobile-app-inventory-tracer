@@ -1893,10 +1893,19 @@ button:focus-visible {
 
 .database-table {
   width: 100%;
-  min-width: 1480px;
+  min-width: 1580px;
   border-collapse: collapse;
   font-size: 12px;
   table-layout: fixed;
+}
+
+.database-table.compact {
+  min-width: 1380px;
+}
+
+.database-table.compact th:nth-child(8),
+.database-table.compact td:nth-child(8) {
+  display: none;
 }
 
 .database-table .column-application,
@@ -1934,6 +1943,10 @@ button:focus-visible {
 
 .database-table .column-types {
   width: 260px;
+}
+
+.database-table .column-row-actions {
+  width: 100px;
 }
 
 .database-table th,
@@ -2109,6 +2122,39 @@ button:focus-visible {
 
 .database-sort-button:hover,
 .database-sort-button.active {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.column-actions-header {
+  width: 100px;
+}
+
+.row-actions-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 8px;
+}
+
+.row-action-btn {
+  display: block;
+  width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.1s, background 0.1s;
+}
+
+.row-action-btn:hover {
+  border-color: var(--accent);
   background: var(--accent-soft);
   color: var(--accent-strong);
 }
@@ -3338,47 +3384,52 @@ button.posture-kpi:focus-visible {
   color: var(--muted);
 }
 
-.bom-option-group {
+.bom-choice-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.bom-choice {
+  flex: 1;
+  min-width: 90px;
+  cursor: pointer;
+}
+
+.bom-choice input[type="radio"] {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+  width: 0;
+  height: 0;
+}
+
+.bom-choice span {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-}
-
-.bom-option {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 10px 12px;
+  padding: 9px 13px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  cursor: pointer;
-  transition: border-color 0.12s;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  transition: border-color 0.12s, background 0.12s;
 }
 
-.bom-option:has(input:checked) {
+.bom-choice:has(input:checked) span {
   border-color: var(--accent);
   background: var(--surface-muted);
 }
 
-.bom-option input[type="radio"] {
+.bom-choice:hover span {
+  border-color: var(--accent);
+}
+
+.bom-choice span small {
+  display: block;
   margin-top: 3px;
-  flex-shrink: 0;
-  accent-color: var(--accent);
-}
-
-.bom-option-text {
-  min-width: 0;
-}
-
-.bom-option-text strong {
-  display: block;
-  font-size: 13px;
-}
-
-.bom-option-text small {
-  display: block;
-  margin-top: 2px;
-  font-size: 11px;
+  font-size: 10px;
+  font-weight: 400;
   color: var(--muted);
 }
 

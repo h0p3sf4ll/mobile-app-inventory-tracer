@@ -85,6 +85,8 @@ const searchDatabaseButton = document.querySelector("#searchDatabase");
 const clearDatabaseSearchButton = document.querySelector("#clearDatabaseSearch");
 const databaseResultSummary = document.querySelector("#databaseResultSummary");
 const databaseResultRows = document.querySelector("#databaseResultRows");
+const toggleContributorsButton = document.querySelector("#toggleContributors");
+const inventoryTable = document.querySelector("#inventoryView .database-table");
 const databasePreviousButton = document.querySelector("#databasePrevious");
 const databaseNextButton = document.querySelector("#databaseNext");
 const databasePageSize = document.querySelector("#databasePageSize");
@@ -447,6 +449,12 @@ function bindEvents() {
   exportDatabaseCsvButton.addEventListener("click", () => exportDatabase("csv"));
   exportDatabaseJsonButton.addEventListener("click", () => exportDatabase("json"));
   exportDatabaseBomButton.addEventListener("click", () => openBomExportDialog(null));
+  inventoryTable.classList.add("compact");
+  toggleContributorsButton.addEventListener("click", () => {
+    const isCompact = inventoryTable.classList.toggle("compact");
+    toggleContributorsButton.textContent = isCompact ? "Show contributors" : "Hide contributors";
+    toggleContributorsButton.setAttribute("aria-pressed", String(!isCompact));
+  });
   closeBomExportButton.addEventListener("click", () => bomExportDialog.close());
   cancelBomExportButton.addEventListener("click", () => bomExportDialog.close());
   runBomExportButton.addEventListener("click", runBomExport);
@@ -521,6 +529,12 @@ function bindEvents() {
     }
   });
   databaseResultRows.addEventListener("click", openInventoryRecordFromEvent);
+  databaseResultRows.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-bom-index]");
+    if (!button) return;
+    const row = state.databaseSearch.rows[Number(button.dataset.bomIndex)];
+    if (row) openBomExportDialog(row);
+  });
   closeInventoryRecordButton.addEventListener("click", () => inventoryRecordDialog.close());
   tabButtons.forEach((button) => {
     button.addEventListener("click", () => setActiveView(button.dataset.view));
@@ -1185,7 +1199,7 @@ function renderDatabaseResults() {
     ? "Updating as findings are committed"
     : `Updated ${formatTime(search.refreshedAt || Date.now())}`;
   if (!search.rows.length) {
-    databaseResultRows.innerHTML = '<tr><td class="database-empty-row" colspan="10">No inventory records match these filters.</td></tr>';
+    databaseResultRows.innerHTML = '<tr><td class="database-empty-row" colspan="11">No inventory records match these filters.</td></tr>';
   } else {
     databaseResultRows.innerHTML = search.rows.map((row, index) => `
       <tr>
@@ -1199,6 +1213,7 @@ function renderDatabaseResults() {
         <td>${databaseCell(row.branch_contributing_developers)}</td>
         <td>${databaseCell(providerLabel(row.provider))}</td>
         <td>${databaseCell(row.inventory_types)}</td>
+        <td class="row-actions-cell"><button class="row-action-btn" type="button" data-record-index="${index}" title="Open record">Open</button><button class="row-action-btn" type="button" data-bom-index="${index}" title="Export Bill of Materials">BOM</button></td>
       </tr>
     `).join("");
   }
